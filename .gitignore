@@ -1,0 +1,13 @@
+# 本机私有：工作区根目录配置与运行日志
+ide-root.json
+dev.log
+
+# 内部交接文档与验证产物（截图已挑进 docs/）
+HANDOVER.md
+evidence/
+
+# 测试脚手架
+workspace/
+
+node_modules/
+*.tgz

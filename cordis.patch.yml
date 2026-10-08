@@ -1,0 +1,4 @@
+# dsh bundle patch: mounts the IDE panel into a profile composition.
+- insert:
+    - id: dsh-ide-vscode
+      name: 'dsh-ide-vscode'

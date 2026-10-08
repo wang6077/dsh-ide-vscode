@@ -1,0 +1,65 @@
+{
+  "name": "dsh-ide-vscode",
+  "version": "0.1.0",
+  "description": "DSH 右侧栏内置 IDE：左文件树 + 右编辑区，右键新建文件/文件夹（后缀可改）、重命名、删除，打开即可编辑并 Ctrl+S 保存。 Built-in IDE panel for DeepSeek Harness: workspace tree plus editor with create / rename / delete / save.",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek",
+    "deepseek-harness",
+    "harness",
+    "ide",
+    "editor",
+    "file-tree",
+    "file-manager",
+    "workspace",
+    "sidebar"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wang6077/dsh-ide-vscode.git"
+  },
+  "homepage": "https://github.com/wang6077/dsh-ide-vscode#readme",
+  "bugs": {
+    "url": "https://github.com/wang6077/dsh-ide-vscode/issues"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./client/client.js",
+    "./package.json": "./package.json"
+  },
+  "main": "./lib/index.js",
+  "files": [
+    "lib",
+    "client",
+    "cordis.patch.yml"
+  ],
+  "scripts": {
+    "test": "node test/host-smoke.mjs && node test/client-smoke.mjs && node test/dom-e2e.mjs"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    }
+  },
+  "dsh": {
+    "client": {
+      "inject": [],
+      "platform": "web"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "engines": {
+      "dsh": ">=0.1.5-rc.1"
+    }
+  }
+}
