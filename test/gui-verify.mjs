@@ -416,6 +416,98 @@ interactions.unpackedOnDisk = await (async () => {
 })()
 report.steps.push({ name: 'after unpack', file: await shot('10-unpacked.png') })
 
+/* ---- audio / video: the players stream from the raw route ---- */
+
+await realClick(await rowExpr('sound.wav'))
+await sleep(2500)
+interactions.audioPane = (await evaluate(`JSON.stringify({
+  wrap: !!document.querySelector('.hx-media-wrap'),
+  tag: document.querySelector('.hx-tag') ? document.querySelector('.hx-tag').textContent : null,
+  src: document.querySelector('audio.hx-audio') ? document.querySelector('audio.hx-audio').getAttribute('src') : null,
+  readyState: (function () { const node = document.querySelector('audio.hx-audio'); return node ? node.readyState : null })(),
+  duration: (function () { const node = document.querySelector('audio.hx-audio'); return node ? node.duration : null })(),
+  error: (function () { const node = document.querySelector('audio.hx-audio'); return node && node.error ? node.error.code : null })(),
+  status: document.querySelector('.hx-status') ? document.querySelector('.hx-status').textContent : null
+})`)).value
+report.steps.push({ name: 'audio player', file: await shot('11-audio.png') })
+
+await realClick(await rowExpr('clip.mp4'))
+await sleep(2200)
+interactions.videoPane = (await evaluate(`JSON.stringify({
+  wrap: !!document.querySelector('.hx-media-wrap'),
+  tag: document.querySelector('.hx-tag') ? document.querySelector('.hx-tag').textContent : null,
+  src: document.querySelector('video.hx-video') ? document.querySelector('video.hx-video').getAttribute('src') : null,
+  textarea: !!document.querySelector('.hx-ta'),
+  status: document.querySelector('.hx-status') ? document.querySelector('.hx-status').textContent : null
+})`)).value
+// 播放器拖动进度条靠 Range —— 用和 <video> 一样的方式问一次
+interactions.videoRange = (await evaluate(`(async () => {
+  const node = document.querySelector('video.hx-video')
+  const src = node ? node.getAttribute('src') : null
+  if (!src) return 'no video src'
+  const res = await fetch(src, { headers: { Range: 'bytes=0-1' } })
+  const body = await res.arrayBuffer()
+  return res.status + ' ' + res.headers.get('content-range') + ' len=' + body.byteLength
+})()`)).value
+report.steps.push({ name: 'video player', file: await shot('12-video.png') })
+
+/* ---- tar (not only zip) lists its members ---- */
+
+if (!(await evaluate(`!!${await rowExpr('sample.tar')}`)).value)
+  await realClick(await rowExpr('docs'))
+await sleep(900)
+await realClick(await rowExpr('sample.tar'))
+await sleep(2200)
+interactions.tarPane = (await evaluate(`JSON.stringify({
+  box: !!document.querySelector('.hx-arch'),
+  tag: document.querySelector('.hx-tag') ? document.querySelector('.hx-tag').textContent : null,
+  members: document.querySelector('.hx-arch') ? document.querySelector('.hx-arch').textContent : null
+})`)).value
+report.steps.push({ name: 'tar listing', file: await shot('13-tar.png') })
+
+/* ---- search box: bare word searches, pasted path jumps ---- */
+
+async function realEnter() {
+  await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 })
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 })
+}
+
+async function typeInto(selector, value) {
+  await realClick(`document.querySelector(${JSON.stringify(selector)})`)
+  await sleep(250)
+  return (await evaluate(`(() => {
+    const input = document.querySelector(${JSON.stringify(selector)})
+    if (!input) return null
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+    setter.call(input, ${JSON.stringify(value)})
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    return input.value
+  })()`)).value
+}
+
+interactions.searchTyped = await typeInto('.hx-find-in', 'inner')
+await realEnter()
+await sleep(2500)
+interactions.searchHits = (await evaluate(`JSON.stringify(Array.from(document.querySelectorAll('.hx-find-hit')).map(node => node.textContent))`)).value
+report.steps.push({ name: 'search hits', file: await shot('14-search.png') })
+interactions.searchHitClicked = await realClick(`document.querySelector('.hx-find-hit')`)
+await sleep(2500)
+interactions.searchJump = (await evaluate(`JSON.stringify({
+  bar: document.querySelector('.hx-bar') ? document.querySelector('.hx-bar').textContent : null,
+  hitsLeft: document.querySelectorAll('.hx-find-hit').length,
+  selected: document.querySelector('.hx-row.sel') ? document.querySelector('.hx-row.sel').textContent : null
+})`)).value
+
+interactions.pathPasted = await typeInto('.hx-find-in', path.join(ROOT, 'docs'))
+await realEnter()
+await sleep(2500)
+interactions.pathJump = (await evaluate(`JSON.stringify({
+  selected: document.querySelector('.hx-row.sel') ? document.querySelector('.hx-row.sel').textContent : null,
+  toast: document.querySelector('.hx-toast') ? document.querySelector('.hx-toast').textContent : null,
+  rows: Array.from(document.querySelectorAll('.hx-row .hx-name')).map(node => node.textContent).slice(0, 8)
+})`)).value
+report.steps.push({ name: 'path jump', file: await shot('15-path-jump.png') })
+
 report.interactions = interactions
 report.consoleErrors = consoleErrors
 report.screenshots = report.steps.map(step => step.file).filter(Boolean)

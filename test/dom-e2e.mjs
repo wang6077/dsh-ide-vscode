@@ -27,6 +27,30 @@ function check(label, condition, detail) {
 
 /* ------------------------------------------------------------- sandbox --- */
 
+/** A real 0.2s 440Hz mono WAV so the raw route serves something decodable. */
+function makeWav() {
+  const rate = 8000
+  const samples = Math.floor(rate * 0.2)
+  const data = Buffer.alloc(samples * 2)
+  for (let index = 0; index < samples; index += 1)
+    data.writeInt16LE(Math.round(Math.sin((2 * Math.PI * 440 * index) / rate) * 8000), index * 2)
+  const header = Buffer.alloc(44)
+  header.write('RIFF', 0)
+  header.writeUInt32LE(36 + data.length, 4)
+  header.write('WAVE', 8)
+  header.write('fmt ', 12)
+  header.writeUInt32LE(16, 16)
+  header.writeUInt16LE(1, 20)
+  header.writeUInt16LE(1, 22)
+  header.writeUInt32LE(rate, 24)
+  header.writeUInt32LE(rate * 2, 28)
+  header.writeUInt16LE(2, 32)
+  header.writeUInt16LE(16, 34)
+  header.write('data', 36)
+  header.writeUInt32LE(data.length, 40)
+  return Buffer.concat([header, data])
+}
+
 await fs.rm(SANDBOX, { recursive: true, force: true })
 await fs.mkdir(path.join(SANDBOX, 'docs'), { recursive: true })
 await fs.writeFile(path.join(SANDBOX, 'hello.js'), 'const a = 1\nconst b = 2\n', 'utf8')
@@ -34,6 +58,10 @@ await fs.writeFile(path.join(SANDBOX, 'docs', 'note.txt'), 'note\n', 'utf8')
 await fs.mkdir(path.join(SANDBOX, 'docs', 'zipped'), { recursive: true })
 await fs.writeFile(path.join(SANDBOX, 'docs', 'zipped', 'inner.txt'), 'inner\n', 'utf8')
 await fs.writeFile(path.join(SANDBOX, 'pixel.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==', 'base64'))
+await fs.writeFile(path.join(SANDBOX, 'sound.wav'), makeWav())
+await fs.writeFile(path.join(SANDBOX, 'clip.mp4'), Buffer.from('00000018667479706d703432000000006d70343269736f6d', 'hex'))
+await fs.mkdir(path.join(SANDBOX, 'deep', 'nest'), { recursive: true })
+await fs.writeFile(path.join(SANDBOX, 'deep', 'nest', 'leaf.txt'), 'leaf\n', 'utf8')
 process.env.DSH_IDE_ROOT = SANDBOX
 
 const { routes } = await import('../lib/index.js')
@@ -284,9 +312,10 @@ try {
   await clickMenu('删除')
   await confirmDialog('移到回收站')
   check('deleted file is gone', !(await fs.stat(path.join(SANDBOX, 'docs', 'renamed.ts')).then(() => true, () => false)))
-  const trash = path.join(SANDBOX, 'workspace', 'backup', 'ide-trash')
+  // The recycle bin defaults to <workspace>/.dsh-ide-vscode/trash, which the tree hides.
+  const trash = path.join(SANDBOX, '.dsh-ide-vscode', 'trash')
   const trashed = await fs.readdir(trash).catch(() => [])
-  check('deleted file landed in ide-trash', trashed.some(name => name.includes('renamed.ts')), trashed.join(','))
+  check('deleted file landed in the workspace trash', trashed.some(name => name.includes('renamed.ts')), trashed.join(','))
 
   // picture → preview pane, never the text editor
   await click(rowNamed('pixel.png'))
@@ -315,6 +344,49 @@ try {
     await click(unpackButton)
   await flush(400)
   check('unpacked next to the archive', await fs.stat(path.join(SANDBOX, 'docs', 'zipped', 'inner.txt')).then(() => true, () => false))
+
+  // audio + video bind to the media pane and stream from the raw route
+  await click(rowNamed('sound.wav'))
+  await flush(200)
+  check('audio opens the media pane', !!container.querySelector('.hx-media-wrap'), container.querySelector('.hx-main')?.textContent?.slice(0, 80))
+  check('audio pane has a player', !!container.querySelector('audio.hx-audio'), container.querySelector('.hx-main')?.innerHTML?.slice(0, 120))
+  check('audio pane is tagged', (container.querySelector('.hx-tag')?.textContent ?? '').includes('音频'), container.querySelector('.hx-tag')?.textContent)
+  check('audio player points at the raw route', (container.querySelector('audio.hx-audio')?.getAttribute('src') ?? '').includes('/api/ide-vscode/raw?path='), container.querySelector('audio.hx-audio')?.getAttribute('src'))
+  check('audio pane is read-only (no textarea)', !container.querySelector('.hx-ta'))
+
+  await click(rowNamed('clip.mp4'))
+  await flush(200)
+  check('video opens the media pane', !!container.querySelector('video.hx-video'), container.querySelector('.hx-main')?.textContent?.slice(0, 80))
+  check('video pane is tagged', (container.querySelector('.hx-tag')?.textContent ?? '').includes('视频'), container.querySelector('.hx-tag')?.textContent)
+  check('video player points at the raw route', (container.querySelector('video.hx-video')?.getAttribute('src') ?? '').includes('/api/ide-vscode/raw?path='), container.querySelector('video.hx-video')?.getAttribute('src'))
+
+  // the search box: a bare word searches the tree, a path jumps straight to it
+  const findInput = container.querySelector('.hx-find-in')
+  check('search box is rendered', !!findInput, container.querySelector('.hx-side-head')?.textContent)
+  await type(findInput, 'leaf')
+  await act(async () => {
+    findInput.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+  })
+  await flush(600)
+  const hits = Array.from(container.querySelectorAll('.hx-find-hit'))
+  check('search lists hits', hits.length > 0, container.querySelector('.hx-find-list')?.textContent)
+  check('search hit names the file', hits.some(hit => hit.textContent.includes('leaf.txt')), hits.map(hit => hit.textContent).join(' | '))
+  check('search hit shows its folder', hits.some(hit => hit.textContent.includes('nest')), hits.map(hit => hit.textContent).join(' | '))
+  if (hits.length > 0)
+    await click(hits.find(hit => hit.textContent.includes('leaf.txt')) ?? hits[0])
+  await flush(400)
+  check('clicking a hit jumps to it (opens the file)', (container.querySelector('.hx-bar')?.textContent ?? '').includes('leaf.txt'), container.querySelector('.hx-bar')?.textContent)
+  check('the hit list folds away after jumping', !container.querySelector('.hx-find-hit'))
+
+  // paste a Windows path (backslashes, outside-the-tree depth) → expand + select
+  await type(findInput, `${SANDBOX}\\deep\\nest`)
+  await act(async () => {
+    findInput.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+  })
+  await flush(700)
+  check('pasting a path expands its folders', !!rowNamed('nest'), rows().map(row => row.querySelector('.hx-name')?.textContent).join(','))
+  check('pasting a path selects the folder', rowNamed('nest')?.className.includes('sel'), rowNamed('nest')?.className)
+  check('pasting a path says where it landed', (container.querySelector('.hx-toast')?.textContent ?? '').includes('deep/nest'), container.querySelector('.hx-toast')?.textContent)
 
   // guide-card open (a tab with no address) mounts fresh and starts empty
   const guideContainer = window.document.createElement('div')

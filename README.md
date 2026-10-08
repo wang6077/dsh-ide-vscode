@@ -68,17 +68,19 @@ dsh plugin --profile desktop add dsh-ide-vscode
 
 **装完要重启一次 DSH。** 插件包列表只在启动时读，热加载不会带上新插件。
 
-## 工作区根目录（配置）
+## 工作区根目录（跟随会话）
 
-树显示哪个目录，按这个顺序决定：
+树显示的就是**这个面板所在会话的工作区**——切换工作区，树跟着换，不需要配置。每个请求都带上会话 id，宿主据此取该会话的 `cwd`。整条链按顺序取第一个**真实存在**的目录：
 
-1. 环境变量 `DSH_IDE_ROOT`
-2. 插件包目录下的 `ide-root.json`，例如 `{"root": "D:\\my\\project"}`
-3. 宿主进程的当前目录（`process.cwd()`）
+1. 环境变量 `DSH_IDE_ROOT`（想强行钉死一个目录时才用）
+2. 该请求所属会话的工作目录（`ctx.sessions` → `sessionPersistence`）
+3. 插件包目录下的 `ide-root.json`，例如 `{"root": "D:\\my\\project"}`（可选）
+4. DSH 自己记录的默认工作区（`~/.dsh/storages/workspace.json`）
+5. 宿主进程的当前目录（`process.cwd()`，最后兜底）
 
-回收站同理：`DSH_IDE_TRASH` > `ide-root.json` 里的 `trash`（相对根目录）> 默认 `<工作区根>/.dsh-ide-vscode/trash`。
+回收站同理：`DSH_IDE_TRASH`（绝对路径）> `ide-root.json` 里的 `trash`（相对根目录）> 默认 `<工作区根>/.dsh-ide-vscode/trash`（这个目录在树里被隐藏）。
 
-`ide-root.json` 是本地文件，既不在 git 里也不在 npm 包里（想留一份自己的根目录就写它）。
+`ide-root.json` 是本地文件，既不在 git 里也不在 npm 包里（想留一份自己的根目录就写它；删掉它，面板就纯粹跟着会话走）。
 
 ## 安全边界
 
@@ -108,10 +110,10 @@ dsh plugin --profile desktop add dsh-ide-vscode
 ## 开发
 
 ```
-lib/index.js          host 半边：13 条路由（root / list / read / stat / raw / archive / extract / compress / write / create / rename / delete / log）
+lib/index.js          host 半边：14 条路由（root / list / read / stat / raw / archive / search / extract / compress / write / create / rename / delete / log）
 client/client.js      客户端半边：右栏标签页 + 文件树 + 编辑器 + 图片预览 + 压缩包面板（React，复用宿主的 ui primitives）
 cordis.patch.yml      把插件插进 bundle 列表
-ide-root.json         本机根目录配置（gitignore，不进包）
+ide-root.json         可选的本机根目录配置（gitignore，不进包）
 test/host-smoke.mjs   69 项：全部路由、越界、改名、回收站、图片 / 压缩包、Origin 闸（离线，无需 DSH）
 test/client-smoke.mjs 34 项：bundle 契约与面板注册（离线，jsdom + react）
 test/dom-e2e.mjs      42 项：真 DOM 交互（点右键菜单、打字、Ctrl+S 落盘、图片预览、压缩包解压）
@@ -140,6 +142,7 @@ MIT
 - **Archives** (`.zip .tar .tar.gz .tgz .gz .7z .rar`) list their members, can be unpacked next to themselves, and any file or folder can be packed into a `.zip` from the context menu — all through the system `tar`, so there is no runtime dependency.
 - Opens from the right-sidebar **+** start page ("工作区 IDE" card) and takes over code/config files (`.js`, `.ts`, `.py`, `.json`, `.ps1`, …) opened from a session; Markdown and HTML stay with DSH's own preview.
 - Install from the plugin market or `dsh plugin --profile desktop add dsh-ide-vscode`, then **restart DSH** (new bundles are only read at startup).
-- The host half adds 13 local routes under `/api/ide-vscode` behind a loopback + same-origin gate, because DSH's built-in `workspaceFiles` service is read-only.
-- Workspace root: `DSH_IDE_ROOT` env var, else `{"root": "..."}` in `ide-root.json` next to the package, else `process.cwd()`.
+- The host half adds 14 local routes under `/api/ide-vscode` behind a loopback + same-origin gate, because DSH's built-in `workspaceFiles` service is read-only.
+- The tree follows the workspace of the session the panel belongs to (each request carries its session id); the fallback chain is `DSH_IDE_ROOT` → session cwd → `{"root": "..."}` in `ide-root.json` next to the package → DSH's own default workspace (`~/.dsh/storages/workspace.json`) → `process.cwd()`, first existing directory wins.
+- The recycle bin lives at `<workspace>/.dsh-ide-vscode/trash` by default (hidden from the tree) and can be redirected with `DSH_IDE_TRASH` or `trash` in `ide-root.json`.
 - No third-party runtime dependencies, no network access. MIT licensed.

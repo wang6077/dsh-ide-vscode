@@ -54,10 +54,12 @@ window.__ModuleLoader__.load({
       ? (name) => P.languageForPath(name)
       : (name) => EXT_FALLBACK[String(name).split('.').pop().toLowerCase()]
 
-    // Pictures are previewed instead of opened as text; archives get a member
-    // list plus 解压/打包. Everything else goes through the text editor.
+    // Pictures are previewed instead of opened as text, sound and video are played
+    // in place, archives get a member list plus 解压/打包. Everything else is text.
     const IMAGE_EXT = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.ico', '.avif']
     const ARCHIVE_EXT = ['.zip', '.tar', '.tar.gz', '.tgz', '.gz', '.7z', '.rar']
+    const AUDIO_EXT = ['.mp3', '.m4a', '.aac', '.wav', '.ogg', '.oga', '.opus', '.flac', '.weba', '.wma', '.mid']
+    const VIDEO_EXT = ['.mp4', '.m4v', '.webm', '.ogv', '.mov', '.mkv', '.avi']
 
     function extOfName(name) {
       const lower = String(name || '').toLowerCase()
@@ -71,6 +73,10 @@ window.__ModuleLoader__.load({
       const ext = extOfName(name)
       if (IMAGE_EXT.includes(ext))
         return 'image'
+      if (AUDIO_EXT.includes(ext))
+        return 'audio'
+      if (VIDEO_EXT.includes(ext))
+        return 'video'
       if (ARCHIVE_EXT.includes(ext))
         return 'archive'
       return 'text'
@@ -104,11 +110,23 @@ window.__ModuleLoader__.load({
       return payload
     }
 
-    async function postJson(path, body) {
+    /** First non-empty string among the candidates, else ''. */
+    function firstString(...values) {
+      for (const value of values) {
+        if (typeof value === 'string' && value !== '')
+          return value
+      }
+      return ''
+    }
+
+    async function postJson(path, body, session) {
+      const headers = { 'content-type': 'application/json' }
+      if (session)
+        headers['x-dsh-session'] = session
       const response = await fetch(path, {
         method: 'POST',
         credentials: 'same-origin',
-        headers: { 'content-type': 'application/json' },
+        headers,
         body: JSON.stringify(body || {}),
       })
       const text = await response.text()
@@ -258,6 +276,18 @@ window.__ModuleLoader__.load({
 .hx-arch-row{display:flex;align-items:center;gap:6px;height:21px;padding-right:10px;font-size:12px;white-space:nowrap}
 .hx-arch-row:hover{background:rgba(127,127,127,.12)}
 .hx-arch-row.dir{color:var(--dsw-alias-label-primary,#e6e6e6)}
+.hx-media-wrap{flex:1;min-height:0;overflow:auto;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(127,127,127,.06)}
+.hx-audio{width:min(520px,100%)}
+.hx-video{max-width:100%;max-height:100%;background:#000;box-shadow:0 4px 18px rgba(0,0,0,.28)}
+.hx-media-wrap .hx-empty{width:100%}
+.hx-find{display:flex;flex-direction:column;border-bottom:1px solid var(--dsw-alias-border-l1,#2a2f36)}
+.hx-find-row{display:flex;align-items:center;gap:6px;padding:4px 6px}
+.hx-find-in{flex:1;min-width:0;height:22px;padding:0 7px;border-radius:5px;font-size:12px;border:1px solid var(--dsw-alias-border-l2,#3a4149);background:var(--dsw-alias-bg-base,#101418);color:var(--dsw-alias-label-primary,#e6e6e6);font-family:inherit}
+.hx-find-in:focus{outline:none;border-color:var(--dsw-alias-brand-primary,#4c8dff)}
+.hx-find-list{max-height:190px;overflow:auto;border-top:1px solid var(--dsw-alias-border-l1,#2a2f36)}
+.hx-find-hit{display:flex;align-items:center;gap:6px;height:22px;padding:0 10px;font-size:12px;white-space:nowrap;overflow:hidden;cursor:pointer}
+.hx-find-hit:hover{background:rgba(127,127,127,.14)}
+.hx-find-hit .hx-note{padding:0}
 `
 
     function ensureStyle() {
@@ -448,6 +478,63 @@ window.__ModuleLoader__.load({
           h('span', null, file.rel),
           h('span', null, fmtSize(file.size)),
           h('span', null, '只读预览'),
+        ),
+      )
+    }
+
+    /** Sound and video are played in place; the bytes come from `/raw`, which
+     *  answers byte ranges so the seek bar works. */
+    function MediaPane({ file, onClose }) {
+      const [failed, setFailed] = useState(false)
+      const isAudio = file.kind === 'audio'
+      return h(
+        'div',
+        { className: 'hx-main' },
+        h(
+          'div',
+          { className: 'hx-bar' },
+          h('span', { className: 'hx-fname' }, file.name),
+          h('span', { className: 'hx-tag' }, isAudio ? '音频播放' : '视频播放'),
+          h('span', { className: 'hx-spacer' }),
+          h('a', {
+            className: 'hx-btn',
+            href: file.url,
+            target: '_blank',
+            rel: 'noreferrer',
+            title: '在新标签页里打开原始文件',
+          }, '新标签页打开'),
+          h('button', { className: 'hx-btn', onClick: onClose, title: '关闭文件' }, '关闭'),
+        ),
+        file.error
+          ? h('div', { className: 'hx-empty' }, file.error)
+          : h(
+            'div',
+            { className: 'hx-media-wrap' },
+            failed
+              ? h('div', { className: 'hx-empty' }, isAudio ? '这个音频放不出来（可能不是真音频，或编码浏览器不认）' : '这个视频放不出来（可能不是真视频，或编码浏览器不认）')
+              : (isAudio
+                ? h('audio', {
+                  className: 'hx-audio',
+                  src: file.url,
+                  controls: true,
+                  preload: 'metadata',
+                  onError: () => setFailed(true),
+                })
+                : h('video', {
+                  className: 'hx-video',
+                  src: file.url,
+                  controls: true,
+                  preload: 'metadata',
+                  onError: () => setFailed(true),
+                })),
+          ),
+        h(
+          'div',
+          { className: 'hx-status' },
+          h('span', null, file.rel),
+          h('span', null, isAudio ? '音频' : '视频'),
+          h('span', null, fmtSize(file.size)),
+          h('span', null, '只读播放'),
         ),
       )
     }
@@ -710,6 +797,22 @@ window.__ModuleLoader__.load({
       const navigation = tab.navigation || {}
       const targetPath = relFromAddress(navigation.address || (navigation.params && navigation.params.address))
 
+      // The workspace this panel shows belongs to the session it is open for: the host
+      // resolves that session's own working directory, so switching workspace switches
+      // the tree instead of pinning whatever directory the host was started in.
+      //
+      // The id is read through a ref so these three stay stable across renders — every
+      // request helper below can then use them without listing them as dependencies.
+      const sessionId = firstString(props?.sessionId, info?.sessionId, tab.sessionId)
+      const sessionRef = useRef(sessionId)
+      sessionRef.current = sessionId
+      const scoped = useCallback((url) => {
+        const id = sessionRef.current
+        return id === '' ? url : `${url}${url.includes('?') ? '&' : '?'}session=${encodeURIComponent(id)}`
+      }, [])
+      const api = useCallback(url => getJson(scoped(url)), [scoped])
+      const apiPost = useCallback((path, body) => postJson(path, body, sessionRef.current), [])
+
       const [root, setRoot] = useState('')
       const [listings, setListings] = useState({})
       const [expanded, setExpanded] = useState({})
@@ -719,6 +822,9 @@ window.__ModuleLoader__.load({
       const [dialog, setDialog] = useState(null)
       const [toast, setToast] = useState(null)
       const [busy, setBusy] = useState(false)
+      const [find, setFind] = useState('')
+      const [findHits, setFindHits] = useState(null)
+      const [findBusy, setFindBusy] = useState(false)
 
       const fileRef = useRef(null)
       fileRef.current = file
@@ -731,7 +837,7 @@ window.__ModuleLoader__.load({
       const loadDir = useCallback(async (rel) => {
         setListings(prev => ({ ...prev, [rel]: { state: 'loading' } }))
         try {
-          const payload = await getJson(`${API}/list?path=${encodeURIComponent(rel)}`)
+          const payload = await api(`${API}/list?path=${encodeURIComponent(rel)}`)
           setListings(prev => ({ ...prev, [rel]: { state: 'ready', entries: payload.entries || [] } }))
         }
         catch (error) {
@@ -741,7 +847,7 @@ window.__ModuleLoader__.load({
 
       useEffect(() => {
         let alive = true
-        getJson(`${API}/root`)
+        api(`${API}/root`)
           .then((payload) => {
             if (!alive)
               return
@@ -752,7 +858,7 @@ window.__ModuleLoader__.load({
         return () => {
           alive = false
         }
-      }, [loadDir, notify])
+      }, [sessionId, loadDir, notify])
 
       const toggleDir = useCallback((rel) => {
         setExpanded((prev) => {
@@ -776,8 +882,8 @@ window.__ModuleLoader__.load({
         const base = { rel, name: baseName(rel), text: '', size: 0, dirty: false, loading: true, kind }
         setFile(base)
         try {
-          if (kind === 'image') {
-            const info = await getJson(`${API}/stat?path=${encodeURIComponent(rel)}`)
+          if (kind === 'image' || kind === 'audio' || kind === 'video') {
+            const info = await api(`${API}/stat?path=${encodeURIComponent(rel)}`)
             setFile({
               ...base,
               rel: info.path || rel,
@@ -785,12 +891,12 @@ window.__ModuleLoader__.load({
               size: info.size || 0,
               mtimeMs: info.mtimeMs || 0,
               loading: false,
-              url: `${API}/raw?path=${encodeURIComponent(rel)}`,
+              url: scoped(`${API}/raw?path=${encodeURIComponent(rel)}`),
             })
             return
           }
           if (kind === 'archive') {
-            const data = await getJson(`${API}/archive?path=${encodeURIComponent(rel)}`)
+            const data = await api(`${API}/archive?path=${encodeURIComponent(rel)}`)
             setFile({
               ...base,
               rel: data.path || rel,
@@ -801,7 +907,7 @@ window.__ModuleLoader__.load({
             })
             return
           }
-          const payload = await getJson(`${API}/read?path=${encodeURIComponent(rel)}`)
+          const payload = await api(`${API}/read?path=${encodeURIComponent(rel)}`)
           setFile({
             ...base,
             rel: payload.path,
@@ -818,6 +924,98 @@ window.__ModuleLoader__.load({
       }, [])
 
       // Open the file the tab was launched for, once the root has loaded.
+      /** 搜索框：粘贴一个路径就跳过去（逐层展开、选中；是文件就顺手打开）。 */
+      const jumpTo = useCallback(async (raw) => {
+        const cleaned = String(raw || '')
+          .trim()
+          .replace(/^"(.*)"$/, '$1')
+          .replace(/\\/g, '/')
+          .replace(/\/+$/, '')
+        if (!cleaned)
+          return
+        let rel = cleaned
+        const rootSlash = String(root || '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+        if (rootSlash && cleaned.toLowerCase().startsWith(rootSlash))
+          rel = cleaned.slice(rootSlash.length).replace(/^\/+/, '')
+        else if (/^[a-zA-Z]:\//.test(cleaned)) {
+          notify(`这个路径不在工作区里（工作区是 ${root}）：${cleaned}`, 'err')
+          return
+        }
+        rel = rel.replace(/^\/+/, '')
+        // 路径可能指向文件、也可能指向还不存在的位置：往上退到第一个真实存在的层级。
+        const parts = rel.split('/').filter(Boolean)
+        let stat = null
+        let known = ''
+        for (let depth = parts.length; depth >= 0; depth -= 1) {
+          const candidate = parts.slice(0, depth).join('/')
+          try {
+            stat = await api(`${API}/stat?path=${encodeURIComponent(candidate)}`)
+            known = candidate
+            break
+          }
+          catch {
+            stat = null
+          }
+        }
+        if (!stat) {
+          notify(`找不到这个路径：${cleaned}`, 'err')
+          return
+        }
+        const target = stat.path === undefined ? known : stat.path
+        setExpanded((prev) => {
+          const next = { ...prev }
+          for (const parent of ancestorsOf(known))
+            next[parent] = true
+          if (stat.dir)
+            next[known] = true
+          return next
+        })
+        for (const parent of ancestorsOf(known))
+          await loadDir(parent).catch(() => {})
+        if (stat.dir) {
+          await loadDir(known).catch(() => {})
+          setSelected(known)
+          notify(known ? `已跳到 ${known}` : '已跳到工作区根目录')
+        }
+        else {
+          setSelected(target)
+          if (stat.kind !== 'binary')
+            await openFileNow(target, stat.kind || kindOfName(target)).catch(() => {})
+        }
+        setTimeout(() => {
+          try {
+            const row = document.querySelector('.hx-row.sel')
+            if (row && typeof row.scrollIntoView === 'function')
+              row.scrollIntoView({ block: 'nearest' })
+          }
+          catch {}
+        }, 90)
+      }, [loadDir, notify, openFileNow, root])
+
+      /** 回车：带斜杠的当路径跳，否则按文件名搜。 */
+      const runFind = useCallback(async (value) => {
+        const text = String(value || '').trim()
+        if (!text)
+          return
+        if (/[\\/]/.test(text) || /^[a-zA-Z]:/.test(text)) {
+          setFindHits(null)
+          await jumpTo(text)
+          return
+        }
+        setFindBusy(true)
+        try {
+          const payload = await api(`${API}/search?q=${encodeURIComponent(text)}`)
+          setFindHits(Array.isArray(payload.results) ? payload.results : [])
+        }
+        catch (error) {
+          setFindHits([])
+          notify(`搜不了：${(error && error.message) || error}`, 'err')
+        }
+        finally {
+          setFindBusy(false)
+        }
+      }, [jumpTo, notify])
+
       const openedTarget = useRef(false)
       useEffect(() => {
         if (openedTarget.current || !targetPath || !root)
@@ -852,7 +1050,7 @@ window.__ModuleLoader__.load({
           return false
         setBusy(true)
         try {
-          const payload = await postJson(`${API}/write`, { path: current.rel, content: current.text, create: true })
+          const payload = await apiPost(`${API}/write`, { path: current.rel, content: current.text, create: true })
           setFile(prev => (prev ? { ...prev, dirty: false, size: payload.size || prev.size, mtimeMs: payload.mtimeMs || prev.mtimeMs } : prev))
           notify(`已保存 ${current.rel}`)
           return true
@@ -875,13 +1073,13 @@ window.__ModuleLoader__.load({
         setBusy(true)
         try {
           if (target.mode === 'newFolder') {
-            await postJson(`${API}/create`, { dir: target.dir, name, folder: true })
+            await apiPost(`${API}/create`, { dir: target.dir, name, folder: true })
             setExpanded(prev => ({ ...prev, [target.dir]: true }))
             await loadDir(target.dir)
             notify(`已新建文件夹 ${name}`)
           }
           else {
-            const payload = await postJson(`${API}/create`, { dir: target.dir, name, content: '' })
+            const payload = await apiPost(`${API}/create`, { dir: target.dir, name, content: '' })
             setExpanded(prev => ({ ...prev, [target.dir]: true }))
             await loadDir(target.dir)
             notify(`已新建文件 ${name}`)
@@ -902,7 +1100,7 @@ window.__ModuleLoader__.load({
         const target = dialog
         setBusy(true)
         try {
-          const payload = await postJson(`${API}/rename`, { path: target.rel, name })
+          const payload = await apiPost(`${API}/rename`, { path: target.rel, name })
           await loadDir(parentOf(target.rel))
           const current = fileRef.current
           if (current && (current.rel === target.rel || current.rel.startsWith(`${target.rel}/`))) {
@@ -926,7 +1124,7 @@ window.__ModuleLoader__.load({
       const doZip = useCallback(async (rel, name) => {
         setBusy(true)
         try {
-          const payload = await postJson(`${API}/compress`, { path: rel, name })
+          const payload = await apiPost(`${API}/compress`, { path: rel, name })
           notify(`已打包 ${payload.path}（${fmtSize(payload.size)}）`)
           await loadDir(parentOf(rel))
           setDialog(null)
@@ -943,7 +1141,7 @@ window.__ModuleLoader__.load({
       const extractAt = useCallback(async (rel) => {
         setBusy(true)
         try {
-          const payload = await postJson(`${API}/extract`, { path: rel })
+          const payload = await apiPost(`${API}/extract`, { path: rel })
           const dir = parentOf(payload.dest)
           setExpanded(prev => ({ ...prev, [dir]: true }))
           await loadDir(dir)
@@ -961,7 +1159,7 @@ window.__ModuleLoader__.load({
         const target = dialog
         setBusy(true)
         try {
-          const payload = await postJson(`${API}/delete`, { path: target.rel, purge: purge === true })
+          const payload = await apiPost(`${API}/delete`, { path: target.rel, purge: purge === true })
           await loadDir(parentOf(target.rel))
           const current = fileRef.current
           if (current && (current.rel === target.rel || current.rel.startsWith(`${target.rel}/`)))
@@ -1162,6 +1360,64 @@ window.__ModuleLoader__.load({
           ),
           h(
             'div',
+            { className: 'hx-find' },
+            h(
+              'div',
+              { className: 'hx-find-row' },
+              h('input', {
+                className: 'hx-in hx-find-in',
+                value: find,
+                placeholder: '搜文件名，或粘贴路径跳转',
+                spellCheck: false,
+                title: '回车搜索；粘贴工作区里的相对路径（如 docs/readme.md）会直接跳到那一层',
+                onChange: (event) => setFind(event.target.value),
+                onKeyDown: (event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    runFind(find).catch(() => {})
+                  }
+                  else if (event.key === 'Escape') {
+                    setFindHits(null)
+                  }
+                },
+              }),
+              findHits === null
+                ? null
+                : h('button', {
+                  className: 'hx-ico',
+                  title: '收起结果',
+                  onClick: () => setFindHits(null),
+                }, '×'),
+            ),
+            findHits === null
+              ? null
+              : h(
+                'div',
+                { className: 'hx-find-list' },
+                findHits.length === 0
+                  ? h('div', { className: 'hx-note' }, findBusy ? '搜着呢…' : '没找到')
+                  : findHits.map((hit, index) => h(
+                    'div',
+                    {
+                      className: 'hx-find-hit',
+                      key: `${index}:${hit.path}`,
+                      title: hit.path,
+                      onClick: () => {
+                        setFindHits(null)
+                        jumpTo(hit.path).catch(() => {})
+                      },
+                    },
+                    ic(hit.dir
+                      ? P.IconFolderOpenRegular
+                      : (isCodeFile(hit.name) ? P.IconCodeOutlineRegular : P.IconDeliverDocRegular), 12),
+                    h('span', { className: 'hx-name' }, hit.name),
+                    h('span', { className: 'hx-spacer' }),
+                    h('span', { className: 'hx-note' }, parentOf(hit.path) || '根目录'),
+                  )),
+              ),
+          ),
+          h(
+            'div',
             {
               className: 'hx-tree',
               onContextMenu: (event) => {
@@ -1178,14 +1434,16 @@ window.__ModuleLoader__.load({
           file
             ? (file.kind === 'image'
               ? h(ImagePane, { file, onClose: closeFile })
-              : file.kind === 'archive'
-                ? h(ArchivePane, {
-                  file,
-                  busy,
-                  onClose: closeFile,
-                  onExtract: () => { extractAt(file.rel).catch(() => {}) },
-                })
-                : h(EditorPane, {
+              : file.kind === 'audio' || file.kind === 'video'
+                ? h(MediaPane, { file, onClose: closeFile })
+                : file.kind === 'archive'
+                  ? h(ArchivePane, {
+                    file,
+                    busy,
+                    onClose: closeFile,
+                    onExtract: () => { extractAt(file.rel).catch(() => {}) },
+                  })
+                  : h(EditorPane, {
                   file,
                   busy,
                   onSave: () => { save().catch(() => {}) },
