@@ -65,6 +65,12 @@ function fakeResponse() {
         return undefined
       }
     },
+    get raw() {
+      return state.body
+    },
+    get headers() {
+      return state.headers
+    },
   }
 }
 
@@ -88,7 +94,7 @@ const created = []
 
 try {
   // 0. route + mount surface
-  check('8 routes exported', routes.length === 8, String(routes.length))
+  check('13 routes exported', routes.length === 13, String(routes.length))
   const registered = []
   apply({
     effect(callback, label) {
@@ -98,7 +104,7 @@ try {
     },
     webServer: { register: () => () => {} },
   })
-  check('apply registers every route', registered.length === 8, registered.join(', '))
+  check('apply registers every route', registered.length === 13, registered.join(', '))
 
   // 1. root
   let response = await call(api('/root'))
@@ -282,6 +288,84 @@ try {
   })
   check('purge 200', response.status === 200 && response.json?.purged === true, String(response.status))
   check('purged file gone', !(await exists(path.join(ROOT, WORK, 'blob.bin'))))
+
+  // 10. pictures: stat + raw bytes (a picture must never go through /read)
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==', 'base64')
+  await fs.writeFile(path.join(ROOT, WORK, 'pixel.png'), png)
+  response = await call(api('/stat'), { query: q(`${WORK}/pixel.png`) })
+  check('stat picture 200', response.status === 200, String(response.status))
+  check('stat reports image kind', response.json?.kind === 'image', String(response.json?.kind))
+  check('stat reports byte size', response.json?.size === png.length, String(response.json?.size))
+
+  response = await call(api('/raw'), { query: q(`${WORK}/pixel.png`) })
+  check('raw picture 200', response.status === 200, String(response.status))
+  check('raw content-type image/png', response.headers['content-type'] === 'image/png', String(response.headers['content-type']))
+  check('raw content-length matches', response.headers['content-length'] === png.length, String(response.headers['content-length']))
+  check('raw returns the bytes', Buffer.isBuffer(response.raw) && response.raw.equals(png), String(response.raw?.length))
+  check('raw is no-store', response.headers['cache-control'] === 'no-store', String(response.headers['cache-control']))
+
+  response = await call(api('/read'), { query: q(`${WORK}/pixel.png`) })
+  check('read a picture → 415', response.status === 415, String(response.status))
+
+  response = await call(api('/raw'), { query: q('../escape.png') })
+  check('raw .. outside → 403', response.status === 403, String(response.status))
+
+  // 11. archives: zip a folder, list it, unpack it, refuse the gates
+  await fs.mkdir(path.join(ROOT, WORK, 'zipme'), { recursive: true })
+  await fs.writeFile(path.join(ROOT, WORK, 'zipme', 'inner.txt'), 'inner\n', 'utf8')
+  response = await call(api('/compress'), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ path: `${WORK}/zipme`, name: 'pack.zip' }),
+  })
+  check('compress a folder 200', response.status === 200, `${response.status} ${response.json?.error ?? ''}`)
+  check('compress wrote the zip', await exists(path.join(ROOT, WORK, 'pack.zip')))
+  check('compress reports a size', (response.json?.size || 0) > 0, String(response.json?.size))
+
+  response = await call(api('/compress'), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ path: `${WORK}/zipme`, name: 'pack.zip' }),
+  })
+  check('compress onto existing → 409', response.status === 409, String(response.status))
+
+  response = await call(api('/archive'), { query: q(`${WORK}/pack.zip`) })
+  check('archive listing 200', response.status === 200, `${response.status} ${response.json?.error ?? ''}`)
+  check('archive lists the member', (response.json?.entries || []).some(entry => String(entry.name).includes('inner.txt')), JSON.stringify((response.json?.entries || []).map(entry => entry.name)))
+
+  response = await call(api('/extract'), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ path: `${WORK}/pack.zip` }),
+  })
+  check('extract 200', response.status === 200, `${response.status} ${response.json?.error ?? ''}`)
+  const unpacked = response.json?.dest ? path.join(ROOT, response.json.dest.replace(/\//g, path.sep)) : ''
+  check('extract defaults to a sibling folder', unpacked.endsWith(`${path.sep}pack`), String(response.json?.dest))
+  check('extract wrote the member', unpacked !== '' && await exists(path.join(unpacked, 'zipme', 'inner.txt')))
+
+  response = await call(api('/archive'), { query: q(`${WORK}/zipme`) })
+  check('archive on a folder → 400', response.status === 400, String(response.status))
+
+  response = await call(api('/extract'), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ path: `${WORK}/pixel.png` }),
+  })
+  check('extract a picture → 415', response.status === 415, String(response.status))
+
+  response = await call(api('/compress'), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ path: `${WORK}/zipme`, name: 'bad.tar' }),
+  })
+  check('compress to non-zip name → 400', response.status === 400, String(response.status))
+
+  response = await call(api('/compress'), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ path: 'node_modules' }),
+  })
+  check('compress node_modules → 403', response.status === 403, String(response.status))
 
   // 10. gates
   response = await call(api('/write'), {

@@ -368,6 +368,54 @@ await sleep(2200)
 interactions.newFolderOnDisk = await stat(path.join(ROOT, 'docs', 'sub')).then(info => (info.isDirectory() ? 'directory' : 'not a directory'), error => `ERR ${error.code}`)
 report.steps.push({ name: 'after new folder', file: await shot('07-after-new-folder.png') })
 
+// a picture must open as a preview, never in the text editor
+interactions.pictureClicked = await realClick(await rowExpr('pixel.png'))
+await sleep(3000)
+if (!(await evaluate(`!!document.querySelector('.hx-img-wrap')`)).value) {
+  // the tree may have re-rendered between measuring the row and clicking it
+  interactions.pictureRetry = await realClick(await rowExpr('pixel.png'))
+  await sleep(3000)
+}
+interactions.pictureMain = (await evaluate(`document.querySelector('.hx-main') ? document.querySelector('.hx-main').innerHTML.slice(0, 300) : 'no .hx-main'`)).value
+interactions.picturePane = (await evaluate(`JSON.stringify({
+  wrap: !!document.querySelector('.hx-img-wrap'),
+  tag: document.querySelector('.hx-tag') ? document.querySelector('.hx-tag').textContent : null,
+  textarea: !!document.querySelector('.hx-ta'),
+  src: document.querySelector('img.hx-img') ? document.querySelector('img.hx-img').getAttribute('src') : null,
+  naturalWidth: (function () { const img = document.querySelector('img.hx-img'); return img ? img.naturalWidth : null })(),
+  status: document.querySelector('.hx-status') ? document.querySelector('.hx-status').textContent : null
+})`)).value
+report.steps.push({ name: 'picture preview', file: await shot('08-picture.png') })
+
+// an archive must list its members and unpack next to itself
+if (!(await evaluate(`!!${await rowExpr('sample.zip')}`)).value)
+  await realClick(await rowExpr('docs'))
+await sleep(1000)
+await realClick(await rowExpr('sample.zip'))
+await sleep(2500)
+interactions.archivePane = (await evaluate(`JSON.stringify({
+  box: !!document.querySelector('.hx-arch'),
+  tag: document.querySelector('.hx-tag') ? document.querySelector('.hx-tag').textContent : null,
+  members: document.querySelector('.hx-arch') ? document.querySelector('.hx-arch').textContent : null
+})`)).value
+report.steps.push({ name: 'archive listing', file: await shot('09-archive.png') })
+interactions.unpackClicked = await realClick(`Array.from(document.querySelectorAll('button')).find(node => node.textContent.includes('解压到旁边'))`)
+await sleep(3500)
+interactions.unpackedOnDisk = await (async () => {
+  const stack = [path.join(ROOT, 'docs')]
+  while (stack.length) {
+    const dir = stack.pop()
+    for (const item of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
+      if (item.isDirectory())
+        stack.push(path.join(dir, item.name))
+      else if (item.name === 'inner.txt')
+        return `${path.relative(ROOT, path.join(dir, item.name)).replace(/\\/g, '/')} ok`
+    }
+  }
+  return 'not found'
+})()
+report.steps.push({ name: 'after unpack', file: await shot('10-unpacked.png') })
+
 report.interactions = interactions
 report.consoleErrors = consoleErrors
 report.screenshots = report.steps.map(step => step.file).filter(Boolean)

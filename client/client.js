@@ -54,6 +54,28 @@ window.__ModuleLoader__.load({
       ? (name) => P.languageForPath(name)
       : (name) => EXT_FALLBACK[String(name).split('.').pop().toLowerCase()]
 
+    // Pictures are previewed instead of opened as text; archives get a member
+    // list plus 解压/打包. Everything else goes through the text editor.
+    const IMAGE_EXT = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.ico', '.avif']
+    const ARCHIVE_EXT = ['.zip', '.tar', '.tar.gz', '.tgz', '.gz', '.7z', '.rar']
+
+    function extOfName(name) {
+      const lower = String(name || '').toLowerCase()
+      if (lower.endsWith('.tar.gz'))
+        return '.tar.gz'
+      const dot = lower.lastIndexOf('.')
+      return dot <= 0 ? '' : lower.slice(dot)
+    }
+
+    function kindOfName(name) {
+      const ext = extOfName(name)
+      if (IMAGE_EXT.includes(ext))
+        return 'image'
+      if (ARCHIVE_EXT.includes(ext))
+        return 'archive'
+      return 'text'
+    }
+
     // ---------------------------------------------------------------- helpers
 
     function report(message) {
@@ -227,6 +249,15 @@ window.__ModuleLoader__.load({
 .hx-btns{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
 .hx-toast{position:absolute;left:50%;bottom:34px;transform:translateX(-50%);max-width:80%;padding:6px 14px;border-radius:999px;font-size:12px;background:var(--dsw-alias-bg-overlay,#1b2026);border:1px solid var(--dsw-alias-border-l2,#3a4149);box-shadow:0 8px 20px rgba(0,0,0,.35);z-index:9997}
 .hx-toast.err{color:var(--dsw-alias-state-error-primary,#ff6b6b)}
+.hx-tag{padding:1px 7px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2,#3a4149);font-size:10.5px;color:var(--dsw-alias-label-secondary,#9aa4b0);white-space:nowrap}
+.hx-img-wrap{flex:1;min-height:0;overflow:auto;display:flex;align-items:center;justify-content:center;padding:14px;background:rgba(127,127,127,.06)}
+.hx-img-wrap.full{align-items:flex-start;justify-content:flex-start}
+.hx-img{max-width:100%;max-height:100%;object-fit:contain;image-rendering:auto;box-shadow:0 4px 18px rgba(0,0,0,.28);background:#fff}
+.hx-img-wrap.full .hx-img{max-width:none;max-height:none}
+.hx-arch{flex:1;min-height:0;overflow:auto;padding:6px 0 10px}
+.hx-arch-row{display:flex;align-items:center;gap:6px;height:21px;padding-right:10px;font-size:12px;white-space:nowrap}
+.hx-arch-row:hover{background:rgba(127,127,127,.12)}
+.hx-arch-row.dir{color:var(--dsw-alias-label-primary,#e6e6e6)}
 `
 
     function ensureStyle() {
@@ -380,6 +411,99 @@ window.__ModuleLoader__.load({
       )
     }
 
+    // ------------------------------------------------------- image / archive
+
+    function ImagePane({ file, onClose }) {
+      const [fit, setFit] = useState(true)
+      const [failed, setFailed] = useState(false)
+      return h(
+        'div',
+        { className: 'hx-main' },
+        h(
+          'div',
+          { className: 'hx-bar' },
+          h('span', { className: 'hx-fname' }, file.name),
+          h('span', { className: 'hx-tag' }, '图片预览'),
+          h('span', { className: 'hx-spacer' }),
+          h('button', { className: 'hx-btn', onClick: () => setFit(!fit) }, fit ? '原始大小' : '适应窗口'),
+          h('button', { className: 'hx-btn', onClick: onClose, title: '关闭文件' }, '关闭'),
+        ),
+        file.error
+          ? h('div', { className: 'hx-empty' }, file.error)
+          : h(
+            'div',
+            { className: `hx-img-wrap${fit ? '' : ' full'}` },
+            failed
+              ? h('div', { className: 'hx-empty' }, '这张图读不出来（可能不是真图片）')
+              : h('img', {
+                className: 'hx-img',
+                src: file.url,
+                alt: file.name,
+                onError: () => setFailed(true),
+              }),
+          ),
+        h(
+          'div',
+          { className: 'hx-status' },
+          h('span', null, file.rel),
+          h('span', null, fmtSize(file.size)),
+          h('span', null, '只读预览'),
+        ),
+      )
+    }
+
+    function ArchivePane({ file, busy, onClose, onExtract }) {
+      const data = file.archive || {}
+      const entries = Array.isArray(data.entries) ? data.entries : []
+      const total = data.count || entries.length
+      return h(
+        'div',
+        { className: 'hx-main' },
+        h(
+          'div',
+          { className: 'hx-bar' },
+          h('span', { className: 'hx-fname' }, file.name),
+          h('span', { className: 'hx-tag' }, `${total} 项`),
+          h('span', { className: 'hx-spacer' }),
+          h('button', {
+            className: 'hx-btn primary',
+            disabled: busy,
+            onClick: onExtract,
+            title: '解压到压缩包旁边（同名目录已存在就自动加 -2）',
+          }, busy ? '解压中…' : '解压到旁边'),
+          h('button', { className: 'hx-btn', onClick: onClose, title: '关闭文件' }, '关闭'),
+        ),
+        file.error
+          ? h('div', { className: 'hx-empty' }, file.error)
+          : h(
+            'div',
+            { className: 'hx-arch' },
+            entries.length === 0 ? h('div', { className: 'hx-note' }, '这个压缩包是空的') : null,
+            entries.map((entry, index) => h(
+              'div',
+              {
+                className: `hx-arch-row${entry.dir ? ' dir' : ''}`,
+                key: index,
+                style: { paddingLeft: `${10 + (entry.depth || 0) * 14}px` },
+              },
+              entry.dir
+                ? ic(P.IconFolderOpenRegular, 12)
+                : h('span', { className: 'hx-glyph' }, '·'),
+              h('span', { className: 'hx-name' }, entry.name.split('/').filter(Boolean).pop() || entry.name),
+            )),
+            data.truncated ? h('div', { className: 'hx-note' }, `只列出前 ${entries.length} 项（共 ${total} 项）`) : null,
+          ),
+        h(
+          'div',
+          { className: 'hx-status' },
+          h('span', null, file.rel),
+          h('span', null, `${total} 项`),
+          h('span', null, fmtSize(file.size)),
+          h('span', null, '只读预览'),
+        ),
+      )
+    }
+
     // ------------------------------------------------------------- context menu
 
     function ContextMenu({ menu, onClose, onPick }) {
@@ -429,11 +553,15 @@ window.__ModuleLoader__.load({
         items.push({ id: 'sep1', sep: true })
       }
       if (entry) {
+        const kind = entry.kind || kindOfName(entry.name)
         items.push({ id: 'rename', label: '重命名 / 改后缀…', icon: P.IconEditOutlineRegular })
         items.push({ id: 'delete', label: '删除', icon: P.IconTrashOutlineRegular, danger: true })
         items.push({ id: 'sep2', sep: true })
         if (entry.dir)
           items.push({ id: 'openFolder', label: '在编辑区打开这个文件夹', icon: P.IconFolderOpenRegular })
+        if (!entry.dir && kind === 'archive')
+          items.push({ id: 'extract', label: '解压到旁边', icon: P.IconFolderOpenRegular })
+        items.push({ id: 'zip', label: '打包成 zip…', icon: P.IconFolderOpenRegular })
       }
       items.push({ id: 'refresh', label: '刷新', icon: P.IconRefreshOutlineRegular })
 
@@ -479,10 +607,12 @@ window.__ModuleLoader__.load({
       }
 
       let body = []
-      if (dialog.mode === 'newFile' || dialog.mode === 'newFolder' || dialog.mode === 'rename') {
+      if (dialog.mode === 'newFile' || dialog.mode === 'newFolder' || dialog.mode === 'rename' || dialog.mode === 'zip') {
         body.push(h('div', { className: 'hx-dlg-text', key: 'hint' }, dialog.mode === 'rename'
           ? `重命名：${dialog.rel}`
-          : `位置：${dialog.dir === '' ? '工作区根目录' : dialog.dir}`))
+          : dialog.mode === 'zip'
+            ? `把 ${dialog.rel} 打包成 zip，和它在同一个目录里（同名会自动提示，不会覆盖）`
+            : `位置：${dialog.dir === '' ? '工作区根目录' : dialog.dir}`))
         body.push(h('input', {
           key: 'input',
           className: 'hx-in',
@@ -555,6 +685,7 @@ window.__ModuleLoader__.load({
             newFile: '新建文件',
             newFolder: '新建文件夹',
             rename: '重命名',
+            zip: '打包成 zip',
             delete: '删除',
             purge: '彻底删除',
             switch: '未保存的修改',
@@ -640,30 +771,49 @@ window.__ModuleLoader__.load({
         loadDir(rel).catch(() => {})
       }, [loadDir])
 
-      const openFileNow = useCallback(async (rel) => {
-        setFile({ rel, name: baseName(rel), text: '', size: 0, dirty: false, loading: true })
+      const openFileNow = useCallback(async (rel, kindHint) => {
+        const kind = kindHint || kindOfName(rel)
+        const base = { rel, name: baseName(rel), text: '', size: 0, dirty: false, loading: true, kind }
+        setFile(base)
         try {
+          if (kind === 'image') {
+            const info = await getJson(`${API}/stat?path=${encodeURIComponent(rel)}`)
+            setFile({
+              ...base,
+              rel: info.path || rel,
+              name: info.name || baseName(rel),
+              size: info.size || 0,
+              mtimeMs: info.mtimeMs || 0,
+              loading: false,
+              url: `${API}/raw?path=${encodeURIComponent(rel)}`,
+            })
+            return
+          }
+          if (kind === 'archive') {
+            const data = await getJson(`${API}/archive?path=${encodeURIComponent(rel)}`)
+            setFile({
+              ...base,
+              rel: data.path || rel,
+              name: data.name || baseName(rel),
+              size: data.size || 0,
+              loading: false,
+              archive: data,
+            })
+            return
+          }
           const payload = await getJson(`${API}/read?path=${encodeURIComponent(rel)}`)
           setFile({
+            ...base,
             rel: payload.path,
             name: payload.name || baseName(rel),
             text: payload.content || '',
             size: payload.size || 0,
             mtimeMs: payload.mtimeMs || 0,
-            dirty: false,
             loading: false,
           })
         }
         catch (error) {
-          setFile({
-            rel,
-            name: baseName(rel),
-            text: '',
-            size: 0,
-            dirty: false,
-            loading: false,
-            error: String((error && error.message) || error),
-          })
+          setFile({ ...base, loading: false, error: String((error && error.message) || error) })
         }
       }, [])
 
@@ -684,15 +834,16 @@ window.__ModuleLoader__.load({
           chain.forEach(rel => loadDir(rel).catch(() => {}))
         }
         setSelected(targetPath)
-        openFileNow(targetPath).catch(() => {})
+        openFileNow(targetPath, kindOfName(targetPath)).catch(() => {})
       }, [targetPath, root, loadDir, openFileNow])
 
-      const requestOpen = useCallback((rel) => {        const current = fileRef.current
+      const requestOpen = useCallback((rel, kind) => {
+        const current = fileRef.current
         if (current && current.dirty && current.rel !== rel) {
-          setDialog({ mode: 'switch', from: current.rel, target: rel })
+          setDialog({ mode: 'switch', from: current.rel, target: rel, kind })
           return
         }
-        openFileNow(rel).catch(() => {})
+        openFileNow(rel, kind).catch(() => {})
       }, [openFileNow])
 
       const save = useCallback(async () => {
@@ -735,7 +886,7 @@ window.__ModuleLoader__.load({
             await loadDir(target.dir)
             notify(`已新建文件 ${name}`)
             if (payload.text !== false)
-              await openFileNow(payload.path)
+              await openFileNow(payload.path, kindOfName(payload.path || name))
           }
           setDialog(null)
         }
@@ -758,7 +909,7 @@ window.__ModuleLoader__.load({
             if (payload.dir === true && target.isDir)
               closeFile()
             else
-              await openFileNow(payload.path)
+              await openFileNow(payload.path, kindOfName(payload.path))
           }
           notify(`已重命名为 ${name}`)
           setDialog(null)
@@ -770,6 +921,41 @@ window.__ModuleLoader__.load({
           setBusy(false)
         }
       }, [closeFile, dialog, loadDir, notify, openFileNow])
+
+      /** 打包：把文件/文件夹压成同目录下的 zip。 */
+      const doZip = useCallback(async (rel, name) => {
+        setBusy(true)
+        try {
+          const payload = await postJson(`${API}/compress`, { path: rel, name })
+          notify(`已打包 ${payload.path}（${fmtSize(payload.size)}）`)
+          await loadDir(parentOf(rel))
+          setDialog(null)
+        }
+        catch (error) {
+          notify(`打包失败：${(error && error.message) || error}`, 'err')
+        }
+        finally {
+          setBusy(false)
+        }
+      }, [loadDir, notify])
+
+      /** 解压：默认解到压缩包旁边（同名目录已存在就自动加 -2）。 */
+      const extractAt = useCallback(async (rel) => {
+        setBusy(true)
+        try {
+          const payload = await postJson(`${API}/extract`, { path: rel })
+          const dir = parentOf(payload.dest)
+          setExpanded(prev => ({ ...prev, [dir]: true }))
+          await loadDir(dir)
+          notify(`已解压到 ${payload.dest}`)
+        }
+        catch (error) {
+          notify(`解压失败：${(error && error.message) || error}`, 'err')
+        }
+        finally {
+          setBusy(false)
+        }
+      }, [loadDir, notify])
 
       const doDelete = useCallback(async (purge) => {
         const target = dialog
@@ -813,18 +999,27 @@ window.__ModuleLoader__.load({
         }
         if (target.mode === 'switch') {
           if (value === '__drop__')
-            openFileNow(target.target).catch(() => {})
+            openFileNow(target.target, target.kind).catch(() => {})
           else if (value === '__save__')
             save().then((ok) => {
               if (ok)
-                openFileNow(target.target).catch(() => {})
+                openFileNow(target.target, target.kind).catch(() => {})
             })
           setDialog(null)
           return
         }
+        if (target.mode === 'zip') {
+          const wanted = String(value || '').trim()
+          if (wanted === '') {
+            notify('名称不能为空', 'err')
+            return
+          }
+          doZip(target.rel, wanted).catch(() => {})
+          return
+        }
         if (target.mode === 'delete')
           doDelete(value === '__purge__').catch(() => {})
-      }, [dialog, doCreate, doDelete, doRename, notify, openFileNow, save])
+      }, [dialog, doCreate, doDelete, doRename, doZip, notify, openFileNow, save])
 
       const onMenuPick = useCallback((id) => {
         const target = menu
@@ -843,9 +1038,13 @@ window.__ModuleLoader__.load({
           setDialog({ mode: 'delete', rel: entry.rel, isDir: entry.dir })
         else if (id === 'openFolder')
           requestOpen(entry.rel)
+        else if (id === 'extract')
+          extractAt(entry.rel).catch(() => {})
+        else if (id === 'zip')
+          setDialog({ mode: 'zip', rel: entry.rel, name: `${entry.name}.zip` })
         else if (id === 'refresh')
           loadDir(entry && entry.dir ? entry.rel : dir).catch(() => {})
-      }, [loadDir, menu, requestOpen])
+      }, [extractAt, loadDir, menu, requestOpen])
 
       useEffect(() => {
         if (typeof tab.actions?.bindCommands === 'function') {
@@ -884,7 +1083,7 @@ window.__ModuleLoader__.load({
             if (entry.dir)
               toggleDir(entry.rel)
             else
-              requestOpen(entry.rel)
+              requestOpen(entry.rel, entry.kind)
           },
           onMenu: (event, entry) => {
             event.preventDefault()
@@ -977,13 +1176,22 @@ window.__ModuleLoader__.load({
           'div',
           { className: 'hx-main' },
           file
-            ? h(EditorPane, {
-              file,
-              busy,
-              onSave: () => { save().catch(() => {}) },
-              onClose: closeFile,
-              onChange: (text) => setFile(prev => (prev ? { ...prev, text, dirty: true } : prev)),
-            })
+            ? (file.kind === 'image'
+              ? h(ImagePane, { file, onClose: closeFile })
+              : file.kind === 'archive'
+                ? h(ArchivePane, {
+                  file,
+                  busy,
+                  onClose: closeFile,
+                  onExtract: () => { extractAt(file.rel).catch(() => {}) },
+                })
+                : h(EditorPane, {
+                  file,
+                  busy,
+                  onSave: () => { save().catch(() => {}) },
+                  onClose: closeFile,
+                  onChange: (text) => setFile(prev => (prev ? { ...prev, text, dirty: true } : prev)),
+                }))
             : h(
               'div',
               { className: 'hx-empty' },

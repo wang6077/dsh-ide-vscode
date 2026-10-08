@@ -31,6 +31,9 @@ await fs.rm(SANDBOX, { recursive: true, force: true })
 await fs.mkdir(path.join(SANDBOX, 'docs'), { recursive: true })
 await fs.writeFile(path.join(SANDBOX, 'hello.js'), 'const a = 1\nconst b = 2\n', 'utf8')
 await fs.writeFile(path.join(SANDBOX, 'docs', 'note.txt'), 'note\n', 'utf8')
+await fs.mkdir(path.join(SANDBOX, 'docs', 'zipped'), { recursive: true })
+await fs.writeFile(path.join(SANDBOX, 'docs', 'zipped', 'inner.txt'), 'inner\n', 'utf8')
+await fs.writeFile(path.join(SANDBOX, 'pixel.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==', 'base64'))
 process.env.DSH_IDE_ROOT = SANDBOX
 
 const { routes } = await import('../lib/index.js')
@@ -47,6 +50,15 @@ const server = http.createServer(async (request, response) => {
 })
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
 const BASE = `http://127.0.0.1:${server.address().port}`
+
+// 用真实路由先把 docs/zipped 打包，树里才会有一个压缩包可点
+const zipFixture = await fetch(`${BASE}/api/ide-vscode/compress`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ path: 'docs/zipped', name: 'zipped.zip' }),
+})
+if (zipFixture.status !== 200)
+  failures.push(`fixture zip failed → ${zipFixture.status} ${await zipFixture.text()}`)
 
 /* ------------------------------------------------------------------ dom --- */
 
@@ -276,12 +288,45 @@ try {
   const trashed = await fs.readdir(trash).catch(() => [])
   check('deleted file landed in ide-trash', trashed.some(name => name.includes('renamed.ts')), trashed.join(','))
 
-  // guide-style open (no address) still renders
+  // picture → preview pane, never the text editor
+  await click(rowNamed('pixel.png'))
+  await flush(120)
+  check('picture opens the preview pane', !!container.querySelector('.hx-img-wrap'), container.querySelector('.hx-main')?.textContent?.slice(0, 80))
+  check('picture pane is tagged 图片预览', (container.querySelector('.hx-tag')?.textContent ?? '').includes('图片预览'), container.querySelector('.hx-tag')?.textContent)
+  check('picture pane has no text editor', !container.querySelector('.hx-ta'))
+  check('picture pane shows the byte size', (container.querySelector('.hx-status')?.textContent ?? '').includes('只读预览'), container.querySelector('.hx-status')?.textContent)
+  const imgSrc = container.querySelector('img.hx-img')?.getAttribute('src') ?? ''
+  check('picture pane points at the raw route', imgSrc.includes('/api/ide-vscode/raw?path='), imgSrc)
+
+  // archive → member list + unpack
+  if (!rowNamed('zipped.zip'))
+    await click(rowNamed('docs'))
+  await flush(80)
+  check('archive row is in the tree', !!rowNamed('zipped.zip'), rows().map(row => row.querySelector('.hx-name')?.textContent).join(','))
+  await click(rowNamed('zipped.zip'))
+  await flush(150)
+  check('archive opens the archive pane', !!container.querySelector('.hx-arch'), container.querySelector('.hx-main')?.textContent?.slice(0, 80))
+  check('archive pane lists the member', (container.querySelector('.hx-arch')?.textContent ?? '').includes('inner.txt'), container.querySelector('.hx-arch')?.textContent)
+  check('archive pane is tagged with the count', /项/.test(container.querySelector('.hx-tag')?.textContent ?? ''), container.querySelector('.hx-tag')?.textContent)
+
+  const unpackButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent.includes('解压到旁边'))
+  check('archive pane has an unpack button', !!unpackButton, Array.from(container.querySelectorAll('button')).map(button => button.textContent).join(' | '))
+  if (unpackButton)
+    await click(unpackButton)
+  await flush(400)
+  check('unpacked next to the archive', await fs.stat(path.join(SANDBOX, 'docs', 'zipped', 'inner.txt')).then(() => true, () => false))
+
+  // guide-card open (a tab with no address) mounts fresh and starts empty
+  const guideContainer = window.document.createElement('div')
+  window.document.body.appendChild(guideContainer)
+  const guideRoot = ReactDOMClient.createRoot(guideContainer)
   await act(async () => {
-    root.render(h(Body, { useTabInfo: () => ({ tab: { id: 'tab-2' } }) }))
+    guideRoot.render(h(Body, { useTabInfo: () => ({ tab: { id: 'tab-guide' } }) }))
   })
   await flush(80)
-  check('address-less open shows the empty editor', !!container.querySelector('.hx-empty'), container.querySelector('.hx-main')?.textContent?.slice(0, 80))
+  check('address-less open shows the empty editor', !!guideContainer.querySelector('.hx-empty'), guideContainer.querySelector('.hx-main')?.textContent?.slice(0, 80))
+  await act(async () => { guideRoot.unmount() })
+  guideContainer.remove()
 }
 catch (error) {
   failures.push(`unexpected throw: ${error?.stack ?? error}`)
