@@ -20,6 +20,7 @@ DSH 自带的工作区文件面板只能看不能改（宿主的 `workspaceFiles
 - **文件上右键**：重命名 / 改后缀… / 删除 / 打包成 zip…
 - 树空白处右键 = 对当前选中的目录操作
 - 新建文件时给一排**后缀胶囊**（`.txt .md .json .js .py .ps1 .sh .bat .yaml .ini .log 无后缀`），点一下自动补全名字，也可以手打任意后缀
+- 顶部搜索框：输名字回车搜（`/search` 路由，按名字跨子目录找，最多列 60 条），粘一个带斜杠 / 盘符的路径就直接跳到那一层，是文件就顺手打开
 
 ![新建文件](docs/new-file.png)
 
@@ -36,6 +37,10 @@ DSH 自带的工作区文件面板只能看不能改（宿主的 `workspaceFiles
 `.png .jpg .jpeg .gif .webp .bmp .ico .avif` 点开直接当图片显示（不是丢给你一句「不是文本文件」）：可切「原始大小 / 适应窗口」，状态栏显示文件大小与「只读预览」。图片走 `GET /api/ide-vscode/raw`，单张上限 64 MB。
 
 ![图片预览](docs/preview-picture.png)
+
+### 音频 / 视频（点开就播放）
+
+`.mp3 .m4a .aac .wav .ogg .oga .opus .flac .weba .wma .mid` 与 `.mp4 .m4v .webm .ogv .mov .mkv .avi` 点开就在面板里播放（`<audio>` / `<video>`，带浏览器原生控件），状态栏标明「只读播放」；字节同样走 `GET /api/ide-vscode/raw`。
 
 ### 压缩包（看内容 / 解压 / 打包）
 
@@ -106,7 +111,7 @@ dsh plugin --profile desktop add dsh-ide-vscode
 
 - 不是完整的 VS Code：没有 Monaco、没有 LSP 补全、没有终端 / Git / 全局搜索，编辑体验就是「行号 + 高亮 + 存盘」
 - 一次只开一个文件，没有多标签
-- 图片只做预览，不能裁剪 / 缩放后另存；视频、PDF、Office 文档不处理
+- 图片只做预览，不能裁剪 / 缩放后另存；音频 / 视频只能在面板里播放，不能剪辑；PDF、Office 文档不处理
 - 压缩包只支持系统 `tar` 认识的那些格式（`.rar` 一般解不了，Windows 自带的 bsdtar 不含 rar 解码器），加密包不支持
 - 编辑二进制文件不行（不认识的二进制后缀仍然不打开）
 - 读写走插件自建的本地 HTTP 路由（挂在宿主 web server 上，只服务这个面板），因为宿主提供的文件服务是只读的
@@ -143,7 +148,9 @@ MIT
 - **Create** files and folders from the context menu, with one-click extension chips; **rename** (extension included) and **delete** (to a trash folder by default, hard delete on request).
 - **Edit** in place with line numbers and syntax highlighting, `Tab` for two spaces, `Ctrl+D` to duplicate the current line (or the whole selection), `Ctrl+S` to save; unsaved changes are tracked and confirmed before switching files.
 - **Pictures** (`.png .jpg .jpeg .gif .webp .bmp .ico .avif`) open as an image preview, fit-to-window or 1:1, never as a "not a text file" error.
+- **Sound and video** (`.mp3 .m4a .aac .wav .ogg .oga .opus .flac .weba .wma .mid`, `.mp4 .m4v .webm .ogv .mov .mkv .avi`) play in place with the browser's own controls and a read-only marker in the status line, again from `GET /api/ide-vscode/raw`.
 - **Archives** (`.zip .tar .tar.gz .tgz .gz .7z .rar`) list their members, can be unpacked next to themselves, and any file or folder can be packed into a `.zip` from the context menu — all through the system `tar`, so there is no runtime dependency.
+- The tree has a **search box**: type a file name to search it by name across subdirectories (up to 60 hits), or paste a path containing a slash or drive letter to jump to that folder and open the file.
 - Opens from the right-sidebar **+** start page ("工作区 IDE" card) and takes over code/config files (`.js`, `.ts`, `.py`, `.json`, `.ps1`, …) opened from a session; Markdown and HTML stay with DSH's own preview.
 - The opening file tree follows the colours of Windows Explorer: folder and file names share one body colour (nothing is dimmed or tinted), folders use the yellow filled icon (`#ffd767` fill, `#d9a13a` outline) and file icons stay neutral grey.
 - File icons are **the pictures the OS itself uses**: on Windows the host asks the shell for the extension (via `SHGetFileInfo`), so `.txt` is Notepad's page, `.bat` the gear window and `.zip` / `.tar` the archive — whatever is installed wins. This is **Windows only**: on macOS and Linux the host answers `{}` without spawning PowerShell or touching any Win32 API, and the panel falls back to its bundled neutral icons (no native extractor is written without a machine to verify one on).
