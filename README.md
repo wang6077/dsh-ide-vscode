@@ -15,6 +15,7 @@ DSH 自带的工作区文件面板只能看不能改（宿主的 `workspaceFiles
 
 - 展开 / 折叠目录，点文件就在右侧打开
 - 配色照着 Windows 资源管理器来：文件夹与文件名**同一种正文色**（不压暗、不区分颜色），文件夹是**黄色填充图标**（`#ffd767` + `#d9a13a` 描边），文件图标保持中性灰
+- 文件图标**直接用系统里那一张**：Windows 下按后缀问资源管理器要（`SHGetFileInfo`），所以 `.txt` 是记事本那张纸、`.bat` 是齿轮窗口、`.zip` / `.tar` 是压缩包，装了什么软件就显示什么图标；其它系统或取不到时退回自带中性图标
 - **目录上右键**：新建文件… / 新建文件夹… / 打包成 zip… / 刷新
 - **文件上右键**：重命名 / 改后缀… / 删除 / 打包成 zip…
 - 树空白处右键 = 对当前选中的目录操作
@@ -113,13 +114,13 @@ dsh plugin --profile desktop add dsh-ide-vscode
 ## 开发
 
 ```
-lib/index.js          host 半边：14 条路由（root / list / read / stat / raw / archive / search / extract / compress / write / create / rename / delete / log）
+lib/index.js          host 半边：15 条路由（root / list / read / stat / raw / archive / search / extract / compress / write / create / rename / delete / log / icons）
 client/client.js      客户端半边：右栏标签页 + 文件树 + 编辑器 + 图片预览 + 压缩包面板（React，复用宿主的 ui primitives）
 cordis.patch.yml      把插件插进 bundle 列表
 ide-root.json         可选的本机根目录配置（gitignore，不进包）
-test/host-smoke.mjs   96 项：全部路由、越界、改名、回收站、图片 / 压缩包、Origin 闸、会话工作区解析（离线，无需 DSH）
-test/client-smoke.mjs 48 项：bundle 契约、面板注册与全局快捷键（离线，jsdom + react）
-test/dom-e2e.mjs      64 项：真 DOM 交互（点右键菜单、打字、Ctrl+D 复制行、Ctrl+S 落盘、图片预览、压缩包解压）
+test/host-smoke.mjs   100 项：全部路由、越界、改名、回收站、图片 / 压缩包、Origin 闸、会话工作区解析、系统图标解析（离线，无需 DSH）
+test/client-smoke.mjs 53 项：bundle 契约、面板注册与全局快捷键、后缀解析（离线，jsdom + react）
+test/dom-e2e.mjs      65 项：真 DOM 交互（点右键菜单、打字、Ctrl+D 复制行、Ctrl+S 落盘、图片预览、压缩包解压、系统图标 img）
 test/gui-verify.mjs   真 GUI 端到端：无头 Edge + CDP 真鼠标真键盘，对隔离的 DSH 实例跑完整流程
 ```
 
@@ -145,9 +146,10 @@ MIT
 - **Archives** (`.zip .tar .tar.gz .tgz .gz .7z .rar`) list their members, can be unpacked next to themselves, and any file or folder can be packed into a `.zip` from the context menu — all through the system `tar`, so there is no runtime dependency.
 - Opens from the right-sidebar **+** start page ("工作区 IDE" card) and takes over code/config files (`.js`, `.ts`, `.py`, `.json`, `.ps1`, …) opened from a session; Markdown and HTML stay with DSH's own preview.
 - The opening file tree follows the colours of Windows Explorer: folder and file names share one body colour (nothing is dimmed or tinted), folders use the yellow filled icon (`#ffd767` fill, `#d9a13a` outline) and file icons stay neutral grey.
+- File icons are **the pictures the OS itself uses**: on Windows the host asks the shell for the extension (via `SHGetFileInfo`), so `.txt` is Notepad's page, `.bat` the gear window and `.zip` / `.tar` the archive — whatever is installed wins. Other platforms, or an extension the shell has nothing for, keep the bundled neutral icons.
 - **`Ctrl+D`** (`⌘D` on macOS, `Ctrl+Alt+D` in the browser build) opens the panel from anywhere; when the editor has focus the same keys still duplicate the current line.
 - Install from the plugin market or `dsh plugin --profile desktop add dsh-ide-vscode`, then **restart DSH** (new bundles are only read at startup).
-- The host half adds 14 local routes under `/api/ide-vscode` behind a loopback + same-origin gate, because DSH's built-in `workspaceFiles` service is read-only.
+- The host half adds 15 local routes under `/api/ide-vscode` behind a loopback + same-origin gate, because DSH's built-in `workspaceFiles` service is read-only.
 - The tree follows the workspace of the session the panel belongs to (each request carries its session id); the fallback chain is `DSH_IDE_ROOT` → session cwd → `{"root": "..."}` in `ide-root.json` next to the package → DSH's own default workspace (`~/.dsh/storages/workspace.json`) → `process.cwd()`, first existing directory wins.
 - The recycle bin lives at `<workspace>/.dsh-ide-vscode/trash` by default (hidden from the tree) and can be redirected with `DSH_IDE_TRASH` or `trash` in `ide-root.json`.
 - No third-party runtime dependencies, no network access. MIT licensed.

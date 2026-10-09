@@ -198,6 +198,11 @@ check('the editor probe ignores unrelated elements', mod.__internals.duplicateAc
 check('duplicateLine copies the caret line', JSON.stringify(mod.__internals.duplicateLine('abc', 1, 1)) === JSON.stringify({ text: 'abc\nabc', caret: 5 }), JSON.stringify(mod.__internals.duplicateLine('abc', 1, 1)))
 check('duplicateLine keeps a multi-line selection whole', JSON.stringify(mod.__internals.duplicateLine('a\nb\nc', 2, 3)) === JSON.stringify({ text: 'a\nb\nb\nc', caret: 4 }), JSON.stringify(mod.__internals.duplicateLine('a\nb\nc', 2, 3)))
 check('duplicateLine leaves an empty file alone', mod.__internals.duplicateLine('', 0, 0) === null, String(mod.__internals.duplicateLine('', 0, 0)))
+check('fileIconKey lowercases the extension', mod.__internals.fileIconKey('notes.TXT') === '.txt', String(mod.__internals.fileIconKey('notes.TXT')))
+check('fileIconKey takes the last extension', mod.__internals.fileIconKey('archive.tar.gz') === '.gz', String(mod.__internals.fileIconKey('archive.tar.gz')))
+check('fileIconKey rejects an extensionless name', mod.__internals.fileIconKey('Makefile') === '', String(mod.__internals.fileIconKey('Makefile')))
+check('fileIconKey rejects a dotfile', mod.__internals.fileIconKey('.env') === '', String(mod.__internals.fileIconKey('.env')))
+check('the shell icon cache is a map', mod.__internals.FILE_ICONS instanceof Map, String(mod.__internals.FILE_ICONS?.constructor?.name))
 
 check('body registered on sidebar.right.pane.tab', slots.length === 1 && slots[0].declaration.name === 'sidebar.right.pane.tab', JSON.stringify(slots.map(entry => entry.declaration.name)))
 check('body slot key equals the definition id', slots[0]?.declaration.key === definition.id, String(slots[0]?.declaration.key))

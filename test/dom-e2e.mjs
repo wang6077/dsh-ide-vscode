@@ -144,6 +144,10 @@ const requireStub = (name) => {
 new Function('window', 'document', 'fetch', source)(window, window.document, baseFetch)
 const mod = spec.factory(requireStub)
 
+// The tree asks the host for the shell's icons; seed one so the <img> path is
+// exercised without depending on the platform or on PowerShell being around.
+mod.__internals.FILE_ICONS.set('.txt', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==')
+
 const slots = []
 mod.apply({
   effect: callback => callback(),
@@ -314,6 +318,7 @@ try {
   // expand a folder, open a file from the tree
   await click(rowNamed('docs'))
   check('folder expands', !!rowNamed('note.txt'), rows().map(row => row.querySelector('.hx-name')?.textContent).join(','))
+  check('a file row shows the shell icon', !!rowNamed('note.txt')?.querySelector('img.hx-fico'), rowNamed('note.txt')?.innerHTML?.slice(0, 160))
   await click(rowNamed('note.txt'))
   check('tree click opens the other file', container.querySelector('.hx-ta')?.value === 'note\n', JSON.stringify(container.querySelector('.hx-ta')?.value))
 

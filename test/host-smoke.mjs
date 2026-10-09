@@ -16,7 +16,7 @@ const SANDBOX = path.resolve(process.env.DSH_IDE_ROOT || path.join(os.tmpdir(), 
 process.env.DSH_IDE_ROOT = SANDBOX
 await fs.mkdir(path.join(SANDBOX, 'workspace', 'tmp'), { recursive: true })
 await fs.writeFile(path.join(SANDBOX, 'README.md'), '# sandbox\n', 'utf8')
-const { routes, apply } = await import('../lib/index.js')
+const { routes, apply, iconKeyFor, parseIconDump } = await import('../lib/index.js')
 
 const ROOT = SANDBOX
 const WORK = 'workspace/tmp/ide-smoke'
@@ -129,7 +129,7 @@ const created = []
 
 try {
   // 0. route + mount surface
-  check('14 routes exported', routes.length === 14, String(routes.length))
+  check('15 routes exported', routes.length === 15, String(routes.length))
   const registered = []
   apply({
     effect(callback, label) {
@@ -144,6 +144,28 @@ try {
     webServer: { register: () => () => {} },
   })
   check('apply registers every route', registered.length === routes.length, `${registered.length} of ${routes.length}`)
+
+  // 0b. shell icons: pure helpers first, then the route itself
+  check('iconKeyFor keeps the extension', iconKeyFor('notes.TXT') === '.txt', iconKeyFor('notes.TXT'))
+  check('iconKeyFor takes the last extension', iconKeyFor('archive.tar.gz') === '.gz', iconKeyFor('archive.tar.gz'))
+  check('iconKeyFor rejects an extensionless name', iconKeyFor('README') === '', iconKeyFor('README'))
+  check('iconKeyFor rejects a dotfile', iconKeyFor('.gitignore') === '', iconKeyFor('.gitignore'))
+  const dumped = parseIconDump(`.txt\t${'A'.repeat(80)}\n.bat\tbroken\n.zip\t${'B'.repeat(64)}`)
+  check('parseIconDump reads every usable row', Object.keys(dumped).join(',') === '.txt,.zip', Object.keys(dumped).join(','))
+  check('parseIconDump makes a data url', String(dumped['.txt']).startsWith('data:image/png;base64,'), String(dumped['.txt']).slice(0, 30))
+  check('parseIconDump drops short payloads', parseIconDump('nothing here') && Object.keys(parseIconDump('nothing here')).length === 0, JSON.stringify(parseIconDump('nothing here')))
+  let iconResponse = await call(api('/icons'))
+  check('GET /icons without extensions 200', iconResponse.status === 200, String(iconResponse.status))
+  check('GET /icons without extensions is empty', JSON.stringify(iconResponse.json?.icons) === '{}', JSON.stringify(iconResponse.json?.icons))
+  iconResponse = await call(api('/icons'), { query: '?ext=%2Etxt%2Cgarbage' })
+  if (process.platform === 'win32') {
+    const url = iconResponse.json?.icons?.['.txt']
+    check('GET /icons .txt is a png data url', typeof url === 'string' && url.startsWith('data:image/png;base64,'), String(url).slice(0, 30))
+    check('GET /icons ignores a bogus extension', iconResponse.json?.icons?.garbage === undefined, String(iconResponse.json?.icons?.garbage))
+  }
+  else {
+    check('GET /icons is empty off Windows', JSON.stringify(iconResponse.json?.icons) === '{}', JSON.stringify(iconResponse.json?.icons))
+  }
 
   // 1. root
   let response = await call(api('/root'))
@@ -523,7 +545,7 @@ try {
   }
 
   const fallbackRoutes = fallback.routes
-  check('fallback instance still exports 14 routes', fallbackRoutes.length === 14, String(fallbackRoutes.length))
+  check('fallback instance still exports 15 routes', fallbackRoutes.length === 15, String(fallbackRoutes.length))
   if (fallbackRoutes.length === 14) {
     const mounted = []
     fallback.apply({

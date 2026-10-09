@@ -211,6 +211,21 @@ window.__ModuleLoader__.load({
       return CODE_EXT.has(String(name).split('.').pop().toLowerCase())
     }
 
+    // Windows shell icons, keyed by extension: the host hands back data URLs pulled
+    // from the OS itself, so the tree shows the same pictures Explorer does. `null`
+    // means "asked, nothing came back" — no repeat request, primitive icon stays.
+    const FILE_ICONS = new Map()
+
+    /** `"notes.TXT"` → `".txt"`; anything without a plain extension → `''`. */
+    function fileIconKey(name) {
+      const base = String(name ?? '').split('/').pop().toLowerCase()
+      const dot = base.lastIndexOf('.')
+      if (dot <= 0 || dot === base.length - 1)
+        return ''
+      const ext = base.slice(dot)
+      return /^\.[a-z0-9][a-z0-9+_-]{0,11}$/.test(ext) ? ext : ''
+    }
+
     // ------------------------------------------------------------------ style
 
     const CSS = `
@@ -230,6 +245,7 @@ window.__ModuleLoader__.load({
 .hx-fi.dir{color:#d9a13a}
 .hx-fi.dir svg path{fill:#ffd767}
 .hx-fi.file svg{fill:none}
+.hx-fico{width:15px;height:15px;flex:0 0 15px;object-fit:contain;display:block}
 .hx-name{overflow:hidden;text-overflow:ellipsis;color:var(--dsw-alias-label-primary,#e6e6e6)}
 .hx-glyph{font-size:10px;opacity:.7}
 .hx-note{padding:4px 0 4px 12px;font-size:11.5px;color:var(--dsw-alias-label-secondary,#8a93a0)}
@@ -891,6 +907,62 @@ window.__ModuleLoader__.load({
       const [findHits, setFindHits] = useState(null)
       const [findBusy, setFindBusy] = useState(false)
 
+      // Windows shell icons for the tree: ask the host once per extension it has not
+      // seen yet, then render <img> for the rows that got one. `iconTick` only exists
+      // to make the rows re-render when an answer lands.
+      const [iconTick, setIconTick] = useState(0)
+      useEffect(() => {
+        const missing = new Set()
+        for (const node of Object.values(listings)) {
+          for (const item of node.entries ?? []) {
+            const key = fileIconKey(item.name)
+            if (!item.dir && key !== '' && !FILE_ICONS.has(key))
+              missing.add(key)
+          }
+        }
+        if (missing.size === 0)
+          return undefined
+        let alive = true
+        getJson(`${API}/icons?ext=${encodeURIComponent([...missing].join(','))}`)
+          .then((payload) => {
+            if (!alive)
+              return
+            let changed = false
+            for (const [key, url] of Object.entries(payload?.icons ?? {})) {
+              if (!FILE_ICONS.has(key)) {
+                FILE_ICONS.set(key, url)
+                changed = true
+              }
+            }
+            for (const key of missing) {
+              if (!FILE_ICONS.has(key))
+                FILE_ICONS.set(key, null)
+            }
+            if (changed)
+              setIconTick(tick => tick + 1)
+          })
+          .catch(() => {
+            if (!alive)
+              return
+            for (const key of missing) {
+              if (!FILE_ICONS.has(key))
+                FILE_ICONS.set(key, null)
+            }
+          })
+        return () => {
+          alive = false
+        }
+      }, [listings])
+
+      /** The shell's picture for a file, or `undefined` when we have none (keep the drawn icon). */
+      const iconFor = (name) => {
+        const key = fileIconKey(name)
+        const url = key === '' ? undefined : FILE_ICONS.get(key)
+        return url === undefined || url === null
+          ? undefined
+          : h('img', { className: 'hx-fico', src: url, alt: '', draggable: false })
+      }
+
       const fileRef = useRef(null)
       fileRef.current = file
 
@@ -1389,9 +1461,9 @@ window.__ModuleLoader__.load({
                 onContextMenu: event => context.onMenu(event, entry),
               },
               h('span', { className: 'hx-tw' }, entry.dir ? (isOpen ? '▾' : '▸') : ''),
-              h('span', { className: `hx-fi ${entry.dir ? 'dir' : 'file'}` }, ic(entry.dir
-                ? P.IconFolderCloseRegular
-                : (isCodeFile(entry.name) ? P.IconCodeOutlineRegular : P.IconDeliverDocRegular), 15)),
+              h('span', { className: `hx-fi ${entry.dir ? 'dir' : 'file'}` }, entry.dir
+                ? ic(P.IconFolderCloseRegular, 15)
+                : (iconFor(entry.name) ?? ic(isCodeFile(entry.name) ? P.IconCodeOutlineRegular : P.IconDeliverDocRegular, 15))),
               h('span', { className: 'hx-name' }, entry.name),
             ))
             if (entry.dir && isOpen)
@@ -1400,7 +1472,7 @@ window.__ModuleLoader__.load({
         }
         walk('', 0)
         return out
-      }, [expanded, file, listings, requestOpen, selected, toggleDir])
+      }, [expanded, file, iconTick, listings, requestOpen, selected, toggleDir])
 
       return h(
         'div',
@@ -1594,7 +1666,7 @@ window.__ModuleLoader__.load({
     exports.inject = inject
     exports.name = ID
     // Offline test seam only; the loader reads apply/inject/name and ignores this.
-    exports.__internals = { relFromAddress, ancestorsOf, definition, CLAIM_PATTERNS, duplicateLine, duplicateActionFor, editorDuplicate }
+    exports.__internals = { relFromAddress, ancestorsOf, definition, CLAIM_PATTERNS, duplicateLine, duplicateActionFor, editorDuplicate, fileIconKey, FILE_ICONS }
     return module.exports
   },
 })
