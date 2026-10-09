@@ -94,7 +94,7 @@ check('factory is a function', typeof spec?.factory === 'function')
 const mod = spec.factory(requireStub)
 check('exports.name', mod.name === 'dsh-ide-vscode', String(mod.name))
 check('exports.apply is a function', typeof mod.apply === 'function')
-check('exports.inject lists both services', Array.isArray(mod.inject) && mod.inject.includes('slots') && mod.inject.includes('sidebarRightTabs'), JSON.stringify(mod.inject))
+check('exports.inject lists the services it uses', Array.isArray(mod.inject) && mod.inject.includes('slots') && mod.inject.includes('sidebarRightTabs') && mod.inject.includes('sidebarRight'), JSON.stringify(mod.inject))
 
 /* ----------------------------------------------------------- apply(ctx) --- */
 
@@ -102,15 +102,42 @@ const definitions = []
 const slots = []
 const injectedInto = []
 const effects = []
+const registered = []
+const opened = []
+const ctxInjections = []
+const capturedTarget = { sessionId: 'ses-1', paneId: 'pane-1', host: 'dock', tabId: 'tab-1' }
+let captured = capturedTarget
+const shortcuts = {
+  register(command) {
+    registered.push(command)
+    return () => {}
+  },
+}
 const ctx = {
   effect(callback, label) {
     effects.push(label)
     return callback()
   },
+  inject(names, callback) {
+    ctxInjections.push(Array.isArray(names) ? names.join('+') : String(names))
+    return callback({
+      effect(callback2, label) {
+        effects.push(label)
+        return callback2()
+      },
+      shortcuts,
+    })
+  },
   sidebarRightTabs: {
     register(definition) {
       definitions.push(definition)
       return () => {}
+    },
+  },
+  sidebarRight: {
+    commandTarget: () => captured,
+    openTabFromTarget(kind, target) {
+      opened.push({ kind, target })
     },
   },
   slots: {
@@ -139,6 +166,38 @@ check('guide card carries id and order', entry.id === 'ide' && typeof entry.orde
 check('guide card title/description are locale functions', typeof entry.title === 'function' && typeof entry.description === 'function', `${typeof entry.title}/${typeof entry.description}`)
 check('tab chip names the opened file', definition.title?.('dsh-resource://file/session/ses-1/lib/index.js') === 'index.js', String(definition.title?.('dsh-resource://file/session/ses-1/lib/index.js')))
 check('tab chip falls back to the panel name', definition.title?.('sidebar://ide-vscode') === '工作区 IDE', String(definition.title?.('sidebar://ide-vscode')))
+check('guide card carries the panel command id', entry.commandId === 'dsh-ide-vscode.open', String(entry.commandId))
+
+/* ------------------------------------------------------ global shortcut --- */
+
+const command = registered[0] ?? {}
+check('registers one panel shortcut', registered.length === 1 && command.id === 'dsh-ide-vscode.open', JSON.stringify(registered.map(item => item.id)))
+check('asks the host for the shortcuts service', ctxInjections.includes('shortcuts'), JSON.stringify(ctxInjections))
+check('desktop default is primary+KeyD', command.defaults?.['desktop:windows']?.code === 'KeyD' && command.defaults['desktop:windows'].modifiers.join('+') === 'primary', JSON.stringify(command.defaults?.['desktop:windows']))
+check('web default dodges the browser bookmark key', command.defaults?.['web:windows']?.modifiers.join('+') === 'primary+alt', JSON.stringify(command.defaults?.['web:windows']))
+check('shortcut still fires while an editor has focus', Array.isArray(command.regions) && command.regions.includes('editable') && command.regions.includes('page'), JSON.stringify(command.regions))
+check('shortcut carries a label and search aliases', typeof command.label === 'function' && Array.isArray(command.aliases) && command.label() === '打开工作区 IDE', String(command.label?.()))
+const outside = command.resolve?.({ target: null })
+if (typeof outside?.run === 'function')
+  outside.run()
+check('outside the editor the keys open the panel', outside?.status === 'handled' && opened.length === 1 && opened[0].kind === 'ide-vscode' && opened[0].target === capturedTarget, JSON.stringify(opened))
+captured = undefined
+const noTarget = command.resolve?.({ target: null })
+captured = capturedTarget
+check('without a panel target the keys are blocked', noTarget?.status === 'blocked' && typeof noTarget.reason === 'string', JSON.stringify(noTarget))
+const fakeTa = {}
+const fakeEditor = { closest: selector => (selector === '.hx-ta' ? fakeTa : null) }
+let duplicated = 0
+mod.__internals.editorDuplicate.set(fakeTa, () => { duplicated += 1 })
+const insideEditor = command.resolve?.({ target: fakeEditor })
+if (typeof insideEditor?.run === 'function')
+  insideEditor.run()
+check('inside the editor the same keys duplicate the line', insideEditor?.status === 'handled' && duplicated === 1 && opened.length === 1, JSON.stringify({ duplicated, opened: opened.length }))
+mod.__internals.editorDuplicate.delete(fakeTa)
+check('the editor probe ignores unrelated elements', mod.__internals.duplicateActionFor({ closest: () => null }) === undefined)
+check('duplicateLine copies the caret line', JSON.stringify(mod.__internals.duplicateLine('abc', 1, 1)) === JSON.stringify({ text: 'abc\nabc', caret: 5 }), JSON.stringify(mod.__internals.duplicateLine('abc', 1, 1)))
+check('duplicateLine keeps a multi-line selection whole', JSON.stringify(mod.__internals.duplicateLine('a\nb\nc', 2, 3)) === JSON.stringify({ text: 'a\nb\nb\nc', caret: 4 }), JSON.stringify(mod.__internals.duplicateLine('a\nb\nc', 2, 3)))
+check('duplicateLine leaves an empty file alone', mod.__internals.duplicateLine('', 0, 0) === null, String(mod.__internals.duplicateLine('', 0, 0)))
 
 check('body registered on sidebar.right.pane.tab', slots.length === 1 && slots[0].declaration.name === 'sidebar.right.pane.tab', JSON.stringify(slots.map(entry => entry.declaration.name)))
 check('body slot key equals the definition id', slots[0]?.declaration.key === definition.id, String(slots[0]?.declaration.key))

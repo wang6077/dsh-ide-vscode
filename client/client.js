@@ -26,7 +26,9 @@ window.__ModuleLoader__.load({
     const ID = 'dsh-ide-vscode'
     const KIND = 'ide-vscode'
     const API = '/api/ide-vscode'
-    const inject = ['slots', 'sidebarRightTabs']
+    // 面板的全局快捷键：桌面 Ctrl+D 打开工作区 IDE（焦点在编辑器里时改为复制当前行）。
+    const COMMAND_OPEN = 'dsh-ide-vscode.open'
+    const inject = ['slots', 'sidebarRightTabs', 'sidebarRight']
 
     const CODE_EXT = new Set(['js', 'cjs', 'mjs', 'jsx', 'ts', 'tsx', 'json', 'jsonc', 'py', 'sh', 'bash', 'zsh', 'ps1', 'psm1', 'cmd', 'bat', 'yml', 'yaml', 'toml', 'ini', 'cfg', 'conf', 'css', 'scss', 'less', 'html', 'htm', 'xml', 'sql', 'lua', 'rb', 'php', 'go', 'rs', 'java', 'c', 'h', 'cpp', 'hpp', 'cs', 'vue', 'svelte'])
     // Resource addresses this page claims: code / config / data files open straight
@@ -306,6 +308,38 @@ window.__ModuleLoader__.load({
 
     // ------------------------------------------------------------- editor pane
 
+    /**
+     * 复制光标所在的整行（选区跨多行时就是那几行），返回新文本与光标落点。
+     * 空文件没有可复制的行，返回 null。
+     */
+    function duplicateLine(text, start, end) {
+      if (text === '')
+        return null
+      const blockStart = text.lastIndexOf('\n', start - 1) + 1
+      const breakAt = text.indexOf('\n', end)
+      const blockEnd = breakAt === -1 ? text.length : breakAt
+      const block = text.slice(blockStart, blockEnd)
+      // 复制出来的那份插在下面，光标停在副本的同一列
+      return { text: `${text.slice(0, blockEnd)}\n${block}${text.slice(blockEnd)}`, caret: blockEnd + 1 + (start - blockStart) }
+    }
+
+    // 挂载中的编辑器 textarea → 它的「复制当前行」动作。全局快捷键优先于编辑器，
+    // 所以焦点在编辑器里时要由 resolve 把这一下转发回编辑器。
+    const editorDuplicate = new WeakMap()
+
+    /** 焦点元素落在编辑器 textarea 里时返回它的复制动作，否则 undefined。 */
+    function duplicateActionFor(element) {
+      let node = element
+      if (node === undefined || node === null)
+        node = typeof document === 'undefined' ? null : document.activeElement
+      if (node === undefined || node === null || typeof node.closest !== 'function')
+        return undefined
+      const ta = node.closest('.hx-ta')
+      if (ta === null || ta === undefined)
+        return undefined
+      return editorDuplicate.get(ta)
+    }
+
     function EditorPane({ file, busy, onChange, onSave, onClose }) {
       const taRef = useRef(null)
       const preRef = useRef(null)
@@ -371,22 +405,31 @@ window.__ModuleLoader__.load({
         }
         if ((event.ctrlKey || event.metaKey) && (event.key === 'd' || event.key === 'D')) {
           event.preventDefault()
-          if (file.text === '')
+          const result = duplicateLine(file.text, ta.selectionStart, ta.selectionEnd)
+          if (result === null)
             return
-          const text = file.text
-          const start = ta.selectionStart
-          const end = ta.selectionEnd
-          // 整行（选区跨多行时就是那几行）
-          const blockStart = text.lastIndexOf('\n', start - 1) + 1
-          const breakAt = text.indexOf('\n', end)
-          const blockEnd = breakAt === -1 ? text.length : breakAt
-          const block = text.slice(blockStart, blockEnd)
-          // 复制出来的那份插在下面，光标停在副本的同一列
-          caretRef.current = blockEnd + 1 + (start - blockStart)
-          onChange(`${text.slice(0, blockEnd)}\n${block}${text.slice(blockEnd)}`)
+          caretRef.current = result.caret
+          onChange(result.text)
           return
         }
       }, [file.text, onChange, onSave])
+
+      // 把「复制当前行」登记给全局快捷键（命令在编辑器里时走这一条）。
+      useEffect(() => {
+        const ta = taRef.current
+        if (ta === null)
+          return undefined
+        editorDuplicate.set(ta, () => {
+          const result = duplicateLine(file.text, ta.selectionStart, ta.selectionEnd)
+          if (result === null)
+            return
+          caretRef.current = result.caret
+          onChange(result.text)
+        })
+        return () => {
+          editorDuplicate.delete(ta)
+        }
+      }, [file.text, onChange])
 
       const lineCount = useMemo(() => file.text.split('\n').length, [file.text])
       const numbers = useMemo(() => {
@@ -1499,6 +1542,7 @@ window.__ModuleLoader__.load({
           title: () => '工作区 IDE',
           description: () => '左树右编辑：新建、改名、删除、保存',
           icon: P.GuideArtworkFiles,
+          commandId: COMMAND_OPEN,
         }],
       }
     }
@@ -1510,6 +1554,32 @@ window.__ModuleLoader__.load({
       }
       catch {}
       ctx.effect(() => ctx.sidebarRightTabs.register(definition()), 'dsh-ide-vscode: tab type')
+      ctx.inject(['shortcuts'], scope => {
+        scope.effect(() => scope.shortcuts.register({
+          id: COMMAND_OPEN,
+          label: () => '打开工作区 IDE',
+          aliases: ['ide', 'workspace ide', '工作区 IDE', '编辑器'],
+          defaults: {
+            'desktop:macos': { code: 'KeyD', modifiers: ['primary'] },
+            'desktop:windows': { code: 'KeyD', modifiers: ['primary'] },
+            'desktop:linux': { code: 'KeyD', modifiers: ['primary'] },
+            'web:macos': { code: 'KeyD', modifiers: ['primary', 'alt'] },
+            'web:windows': { code: 'KeyD', modifiers: ['primary', 'alt'] },
+          },
+          regions: ['page', 'editable', 'terminal'],
+          modals: [],
+          resolve: ({ target }) => {
+            // 焦点在编辑器里：这一下是「复制当前行」，不是开面板。
+            const duplicate = duplicateActionFor(target)
+            if (duplicate !== undefined)
+              return { status: 'handled', run: duplicate }
+            const captured = ctx.sidebarRight.commandTarget(target)
+            if (captured === undefined)
+              return { status: 'blocked', reason: '当前没有可打开的工作区面板' }
+            return { status: 'handled', run: () => { ctx.sidebarRight.openTabFromTarget(KIND, captured) } }
+          },
+        }), 'dsh-ide-vscode: shortcut')
+      })
       ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
         name: 'sidebar.right.pane.tab',
         key: ID,
@@ -1520,7 +1590,7 @@ window.__ModuleLoader__.load({
     exports.inject = inject
     exports.name = ID
     // Offline test seam only; the loader reads apply/inject/name and ignores this.
-    exports.__internals = { relFromAddress, ancestorsOf, definition, CLAIM_PATTERNS }
+    exports.__internals = { relFromAddress, ancestorsOf, definition, CLAIM_PATTERNS, duplicateLine, duplicateActionFor, editorDuplicate }
     return module.exports
   },
 })

@@ -25,6 +25,7 @@ DSH 自带的工作区文件面板只能看不能改（宿主的 `workspaceFiles
 
 - 行号 + 语法高亮（用宿主自带的 shiki 高亮器，按扩展名识别）
 - 直接打字编辑；`Tab` 插入两个空格；`Ctrl+D` 复制当前行（选中多行就复制整段）；`Ctrl+S` 保存（也有「保存」按钮）
+- 焦点不在编辑器里时（比如刚打开 DSH、正在跟会话说话），`Ctrl+D` 就是**打开这个面板**的全局快捷键——右侧栏起始页的卡片上也写着它
 - 状态栏显示 **行数 / 字符数 / 字节数 / 已保存·未保存**；有未保存修改时文件名旁带一个圆点
 - 切换文件时如果当前文件有未保存的修改，会问「保存并打开 / 放弃修改 / 取消」
 
@@ -51,6 +52,7 @@ DSH 自带的工作区文件面板只能看不能改（宿主的 `workspaceFiles
 ### 在哪里打开
 
 - 右侧栏点 `+` → 起始页上的「工作区 IDE」卡片（图标是文件树）
+- **任何地方按 `Ctrl+D`**（macOS 是 `⌘D`；网页版因为是浏览器，用 `Ctrl+Alt+D`）直接开面板；焦点在编辑器里时这个组合键仍是「复制当前行」
 - 会话里点到 `.js .ts .py .json .ps1 .yaml ...` 这类代码 / 配置文件时，也会直接开在这个 IDE 里
 - `.md`、`.html` 仍交给 DSH 自带的文档预览，不抢
 
@@ -115,7 +117,7 @@ client/client.js      客户端半边：右栏标签页 + 文件树 + 编辑器 
 cordis.patch.yml      把插件插进 bundle 列表
 ide-root.json         可选的本机根目录配置（gitignore，不进包）
 test/host-smoke.mjs   96 项：全部路由、越界、改名、回收站、图片 / 压缩包、Origin 闸、会话工作区解析（离线，无需 DSH）
-test/client-smoke.mjs 34 项：bundle 契约与面板注册（离线，jsdom + react）
+test/client-smoke.mjs 48 项：bundle 契约、面板注册与全局快捷键（离线，jsdom + react）
 test/dom-e2e.mjs      64 项：真 DOM 交互（点右键菜单、打字、Ctrl+D 复制行、Ctrl+S 落盘、图片预览、压缩包解压）
 test/gui-verify.mjs   真 GUI 端到端：无头 Edge + CDP 真鼠标真键盘，对隔离的 DSH 实例跑完整流程
 ```
@@ -141,6 +143,7 @@ MIT
 - **Pictures** (`.png .jpg .jpeg .gif .webp .bmp .ico .avif`) open as an image preview, fit-to-window or 1:1, never as a "not a text file" error.
 - **Archives** (`.zip .tar .tar.gz .tgz .gz .7z .rar`) list their members, can be unpacked next to themselves, and any file or folder can be packed into a `.zip` from the context menu — all through the system `tar`, so there is no runtime dependency.
 - Opens from the right-sidebar **+** start page ("工作区 IDE" card) and takes over code/config files (`.js`, `.ts`, `.py`, `.json`, `.ps1`, …) opened from a session; Markdown and HTML stay with DSH's own preview.
+- **`Ctrl+D`** (`⌘D` on macOS, `Ctrl+Alt+D` in the browser build) opens the panel from anywhere; when the editor has focus the same keys still duplicate the current line.
 - Install from the plugin market or `dsh plugin --profile desktop add dsh-ide-vscode`, then **restart DSH** (new bundles are only read at startup).
 - The host half adds 14 local routes under `/api/ide-vscode` behind a loopback + same-origin gate, because DSH's built-in `workspaceFiles` service is read-only.
 - The tree follows the workspace of the session the panel belongs to (each request carries its session id); the fallback chain is `DSH_IDE_ROOT` → session cwd → `{"root": "..."}` in `ide-root.json` next to the package → DSH's own default workspace (`~/.dsh/storages/workspace.json`) → `process.cwd()`, first existing directory wins.

@@ -137,6 +137,30 @@ async function text() {
 
 report.startText = await text()
 
+/* ---- global shortcut: read the keys off the card, then press them ------- */
+
+report.cardKeys = (await evaluate(`(() => {
+  const label = Array.from(document.querySelectorAll('*')).find(el => el.children.length === 0 && (el.textContent || '').trim() === '工作区 IDE')
+  const card = label ? label.closest('[role="button"],button,li,div') : null
+  return card ? Array.from(card.querySelectorAll('kbd')).map(node => (node.textContent || '').trim()) : []
+})()`)).value || []
+report.steps.push({ name: 'guide card shortcut', file: await shot('01b-card-shortcut.png') })
+
+let shortcutOpened = false
+if (report.cardKeys.includes('D')) {
+  const modifiers = (report.cardKeys.includes('Alt') ? 1 : 0)
+    + (report.cardKeys.includes('Ctrl') ? 2 : 0)
+    + (report.cardKeys.includes('⌘') ? 4 : 0)
+    + (report.cardKeys.includes('Shift') ? 8 : 0)
+  await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', modifiers, key: 'd', code: 'KeyD', windowsVirtualKeyCode: 68, nativeVirtualKeyCode: 68 })
+  await sleep(60)
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', modifiers, key: 'd', code: 'KeyD', windowsVirtualKeyCode: 68, nativeVirtualKeyCode: 68 })
+  await sleep(4000)
+  shortcutOpened = (await evaluate(`document.querySelectorAll('.hx-side').length`)).value > 0
+}
+report.shortcutOpened = shortcutOpened
+report.steps.push({ name: 'after global shortcut', file: await shot('01c-shortcut-open.png') })
+
 /* ---- click the guide card, opening the right sidebar first when needed ---- */
 
 async function findCard() {
@@ -150,7 +174,7 @@ async function findCard() {
   })()`)).value
 }
 
-let cardClicked = await findCard()
+let cardClicked = shortcutOpened || await findCard()
 if (!cardClicked) {
   const selectors = [
     '[title*="右"]', '[aria-label*="右"]',

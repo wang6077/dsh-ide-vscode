@@ -147,7 +147,15 @@ const mod = spec.factory(requireStub)
 const slots = []
 mod.apply({
   effect: callback => callback(),
+  inject: (names, callback) => callback({
+    effect: callback2 => callback2(),
+    shortcuts: { register: () => () => {} },
+  }),
   sidebarRightTabs: { register: () => () => {} },
+  sidebarRight: {
+    commandTarget: () => ({ sessionId: 'ses-1', paneId: 'pane-1', host: 'dock' }),
+    openTabFromTarget: () => {},
+  },
   slots: {
     inject: (name, factory) => factory(),
     register: (declaration, component) => {
