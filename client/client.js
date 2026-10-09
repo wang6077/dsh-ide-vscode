@@ -225,8 +225,12 @@ window.__ModuleLoader__.load({
 .hx-row:hover{background:rgba(127,127,127,.15)}
 .hx-row.sel{background:rgba(127,127,127,.22)}
 .hx-row.act{background:color-mix(in srgb,var(--dsw-alias-brand-primary,#4a8cff) 26%,transparent)}
-.hx-tw{width:11px;flex:0 0 11px;text-align:center;opacity:.6;font-size:9px}
-.hx-name{overflow:hidden;text-overflow:ellipsis}
+.hx-tw{width:12px;flex:0 0 12px;text-align:center;font-size:10px;line-height:1;color:var(--dsw-alias-label-secondary,#7c8288)}
+.hx-fi{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;color:var(--dsw-alias-label-secondary,#7c8288)}
+.hx-fi.dir{color:#d9a13a}
+.hx-fi.dir svg path{fill:#ffd767}
+.hx-fi.file svg{fill:none}
+.hx-name{overflow:hidden;text-overflow:ellipsis;color:var(--dsw-alias-label-primary,#e6e6e6)}
 .hx-glyph{font-size:10px;opacity:.7}
 .hx-note{padding:4px 0 4px 12px;font-size:11.5px;color:var(--dsw-alias-label-secondary,#8a93a0)}
 .hx-note.err{color:var(--dsw-alias-state-error-primary,#ff6b6b)}
@@ -1385,9 +1389,9 @@ window.__ModuleLoader__.load({
                 onContextMenu: event => context.onMenu(event, entry),
               },
               h('span', { className: 'hx-tw' }, entry.dir ? (isOpen ? '▾' : '▸') : ''),
-              ic(entry.dir
-                ? (isOpen ? P.IconFolderOpenRegular : P.IconFolderCloseRegular)
-                : (isCodeFile(entry.name) ? P.IconCodeOutlineRegular : P.IconDeliverDocRegular), 13),
+              h('span', { className: `hx-fi ${entry.dir ? 'dir' : 'file'}` }, ic(entry.dir
+                ? P.IconFolderCloseRegular
+                : (isCodeFile(entry.name) ? P.IconCodeOutlineRegular : P.IconDeliverDocRegular), 15)),
               h('span', { className: 'hx-name' }, entry.name),
             ))
             if (entry.dir && isOpen)

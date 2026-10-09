@@ -14,6 +14,7 @@ DSH 自带的工作区文件面板只能看不能改（宿主的 `workspaceFiles
 ### 文件树（左）
 
 - 展开 / 折叠目录，点文件就在右侧打开
+- 配色照着 Windows 资源管理器来：文件夹与文件名**同一种正文色**（不压暗、不区分颜色），文件夹是**黄色填充图标**（`#ffd767` + `#d9a13a` 描边），文件图标保持中性灰
 - **目录上右键**：新建文件… / 新建文件夹… / 打包成 zip… / 刷新
 - **文件上右键**：重命名 / 改后缀… / 删除 / 打包成 zip…
 - 树空白处右键 = 对当前选中的目录操作
@@ -143,6 +144,7 @@ MIT
 - **Pictures** (`.png .jpg .jpeg .gif .webp .bmp .ico .avif`) open as an image preview, fit-to-window or 1:1, never as a "not a text file" error.
 - **Archives** (`.zip .tar .tar.gz .tgz .gz .7z .rar`) list their members, can be unpacked next to themselves, and any file or folder can be packed into a `.zip` from the context menu — all through the system `tar`, so there is no runtime dependency.
 - Opens from the right-sidebar **+** start page ("工作区 IDE" card) and takes over code/config files (`.js`, `.ts`, `.py`, `.json`, `.ps1`, …) opened from a session; Markdown and HTML stay with DSH's own preview.
+- The opening file tree follows the colours of Windows Explorer: folder and file names share one body colour (nothing is dimmed or tinted), folders use the yellow filled icon (`#ffd767` fill, `#d9a13a` outline) and file icons stay neutral grey.
 - **`Ctrl+D`** (`⌘D` on macOS, `Ctrl+Alt+D` in the browser build) opens the panel from anywhere; when the editor has focus the same keys still duplicate the current line.
 - Install from the plugin market or `dsh plugin --profile desktop add dsh-ide-vscode`, then **restart DSH** (new bundles are only read at startup).
 - The host half adds 14 local routes under `/api/ide-vscode` behind a loopback + same-origin gate, because DSH's built-in `workspaceFiles` service is read-only.
