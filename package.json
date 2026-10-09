@@ -1,7 +1,7 @@
 {
   "name": "dsh-ide-vscode",
-  "version": "0.1.0",
-  "description": "DSH 右侧栏内置 IDE：左文件树 + 右编辑区，右键新建文件/文件夹（后缀可改）、重命名、删除，打开即可编辑并 Ctrl+S 保存。 Built-in IDE panel for DeepSeek Harness: workspace tree plus editor with create / rename / delete / save.",
+  "version": "0.1.1",
+  "description": "DSH 右侧栏内置 IDE：跟随会话工作区的文件树 + 编辑区（行号、语法高亮、Ctrl+S 保存、Ctrl+D 复制行），Windows 系统原生文件图标，图片与音视频预览，压缩包列成员 / 解压 / 打包走系统 tar，按名搜索或粘路径跳转。 Built-in IDE panel for DeepSeek Harness: a workspace tree that follows the session plus an editor with line numbers, syntax highlighting, Ctrl+S save and Ctrl+D line duplicate, native file-type icons on Windows, image and audio/video preview, archive listing / unpack / zip packing through the system tar, and search by name or jump by pasted path.",
   "type": "module",
   "license": "MIT",
   "keywords": [
