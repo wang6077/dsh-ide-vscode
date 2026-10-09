@@ -268,6 +268,12 @@ async function realCtrlS() {
   await send('Input.dispatchKeyEvent', { type: 'keyUp', modifiers: 2, key: 's', code: 'KeyS', windowsVirtualKeyCode: 83, nativeVirtualKeyCode: 83 })
 }
 
+async function realCtrlD() {
+  await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', modifiers: 2, key: 'd', code: 'KeyD', windowsVirtualKeyCode: 68, nativeVirtualKeyCode: 68 })
+  await sleep(40)
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', modifiers: 2, key: 'd', code: 'KeyD', windowsVirtualKeyCode: 68, nativeVirtualKeyCode: 68 })
+}
+
 const interactions = {}
 
 // dismiss the first-run notices so later clicks are not swallowed by an overlay
@@ -314,6 +320,35 @@ await sleep(2000)
 interactions.fileOnDisk = await readFile(path.join(ROOT, 'hello.js'), 'utf8').catch(error => `ERR ${error.code}`)
 interactions.statusAfterSave = (await evaluate(`document.querySelector('.hx-status') ? document.querySelector('.hx-status').textContent : null`)).value
 report.steps.push({ name: 'after Ctrl+S', file: await shot('04-saved.png') })
+
+// Ctrl+D duplicates the current line (real key through CDP)
+interactions.duplicateCaret = (await evaluate(`(() => {
+  const area = document.querySelector('.hx-ta')
+  if (!area) return null
+  area.focus()
+  area.selectionStart = area.selectionEnd = 6
+  return { value: area.value, caret: area.selectionStart }
+})()`)).value
+await realCtrlD()
+await sleep(900)
+interactions.afterCtrlD = (await evaluate(`JSON.stringify({
+  value: document.querySelector('.hx-ta') ? document.querySelector('.hx-ta').value : null,
+  caret: document.querySelector('.hx-ta') ? document.querySelector('.hx-ta').selectionStart : null,
+  status: document.querySelector('.hx-status') ? document.querySelector('.hx-status').textContent : null,
+})`)).value
+report.steps.push({ name: 'after Ctrl+D', file: await shot('04b-duplicate-line.png') })
+// put the original two lines back so the later steps see the same file
+await evaluate(`(() => {
+  const area = document.querySelector('.hx-ta')
+  if (!area) return null
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set
+  setter.call(area, 'const hello = "gui saved"\\nconsole.log(hello)\\n')
+  area.dispatchEvent(new Event('input', { bubbles: true }))
+  area.focus()
+  return area.value
+})()`)
+await realCtrlS()
+await sleep(2000)
 
 // right-click the docs folder -> new file, then switch the suffix with a chip
 interactions.contextMenu = await realRightClick(await rowExpr('docs'))

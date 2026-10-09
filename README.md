@@ -24,7 +24,7 @@ DSH 自带的工作区文件面板只能看不能改（宿主的 `workspaceFiles
 ### 编辑器（右）
 
 - 行号 + 语法高亮（用宿主自带的 shiki 高亮器，按扩展名识别）
-- 直接打字编辑；`Tab` 插入两个空格；`Ctrl+S` 保存（也有「保存」按钮）
+- 直接打字编辑；`Tab` 插入两个空格；`Ctrl+D` 复制当前行（选中多行就复制整段）；`Ctrl+S` 保存（也有「保存」按钮）
 - 状态栏显示 **行数 / 字符数 / 字节数 / 已保存·未保存**；有未保存修改时文件名旁带一个圆点
 - 切换文件时如果当前文件有未保存的修改，会问「保存并打开 / 放弃修改 / 取消」
 
@@ -114,9 +114,9 @@ lib/index.js          host 半边：14 条路由（root / list / read / stat / r
 client/client.js      客户端半边：右栏标签页 + 文件树 + 编辑器 + 图片预览 + 压缩包面板（React，复用宿主的 ui primitives）
 cordis.patch.yml      把插件插进 bundle 列表
 ide-root.json         可选的本机根目录配置（gitignore，不进包）
-test/host-smoke.mjs   69 项：全部路由、越界、改名、回收站、图片 / 压缩包、Origin 闸（离线，无需 DSH）
+test/host-smoke.mjs   96 项：全部路由、越界、改名、回收站、图片 / 压缩包、Origin 闸、会话工作区解析（离线，无需 DSH）
 test/client-smoke.mjs 34 项：bundle 契约与面板注册（离线，jsdom + react）
-test/dom-e2e.mjs      42 项：真 DOM 交互（点右键菜单、打字、Ctrl+S 落盘、图片预览、压缩包解压）
+test/dom-e2e.mjs      64 项：真 DOM 交互（点右键菜单、打字、Ctrl+D 复制行、Ctrl+S 落盘、图片预览、压缩包解压）
 test/gui-verify.mjs   真 GUI 端到端：无头 Edge + CDP 真鼠标真键盘，对隔离的 DSH 实例跑完整流程
 ```
 
@@ -137,7 +137,7 @@ MIT
 `dsh-ide-vscode` puts a small IDE into the DeepSeek Harness right sidebar: a workspace file tree on the left, an editor / image preview / archive viewer on the right.
 
 - **Create** files and folders from the context menu, with one-click extension chips; **rename** (extension included) and **delete** (to a trash folder by default, hard delete on request).
-- **Edit** in place with line numbers and syntax highlighting, `Tab` for two spaces, `Ctrl+S` to save; unsaved changes are tracked and confirmed before switching files.
+- **Edit** in place with line numbers and syntax highlighting, `Tab` for two spaces, `Ctrl+D` to duplicate the current line (or the whole selection), `Ctrl+S` to save; unsaved changes are tracked and confirmed before switching files.
 - **Pictures** (`.png .jpg .jpeg .gif .webp .bmp .ico .avif`) open as an image preview, fit-to-window or 1:1, never as a "not a text file" error.
 - **Archives** (`.zip .tar .tar.gz .tgz .gz .7z .rar`) list their members, can be unpacked next to themselves, and any file or folder can be packed into a `.zip` from the context menu — all through the system `tar`, so there is no runtime dependency.
 - Opens from the right-sidebar **+** start page ("工作区 IDE" card) and takes over code/config files (`.js`, `.ts`, `.py`, `.json`, `.ps1`, …) opened from a session; Markdown and HTML stay with DSH's own preview.

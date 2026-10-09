@@ -367,6 +367,24 @@ window.__ModuleLoader__.load({
         if ((event.ctrlKey || event.metaKey) && (event.key === 's' || event.key === 'S')) {
           event.preventDefault()
           onSave()
+          return
+        }
+        if ((event.ctrlKey || event.metaKey) && (event.key === 'd' || event.key === 'D')) {
+          event.preventDefault()
+          if (file.text === '')
+            return
+          const text = file.text
+          const start = ta.selectionStart
+          const end = ta.selectionEnd
+          // 整行（选区跨多行时就是那几行）
+          const blockStart = text.lastIndexOf('\n', start - 1) + 1
+          const breakAt = text.indexOf('\n', end)
+          const blockEnd = breakAt === -1 ? text.length : breakAt
+          const block = text.slice(blockStart, blockEnd)
+          // 复制出来的那份插在下面，光标停在副本的同一列
+          caretRef.current = blockEnd + 1 + (start - blockStart)
+          onChange(`${text.slice(0, blockEnd)}\n${block}${text.slice(blockEnd)}`)
+          return
         }
       }, [file.text, onChange, onSave])
 
@@ -1456,7 +1474,7 @@ window.__ModuleLoader__.load({
               ic(P.IconWorkspaceTreeOutlineRegular || P.IconFolderOpenRegular, 28),
               h('div', null, '左边选一个文件打开'),
               h('div', { style: { fontSize: 11.5 } }, '右键目录：新建文件 / 新建文件夹；右键文件：重命名、删除'),
-              h('div', { style: { fontSize: 11.5 } }, 'Ctrl+S 保存'),
+              h('div', { style: { fontSize: 11.5 } }, 'Ctrl+S 保存 · Ctrl+D 复制当前行 · Tab 缩进'),
             ),
         ),
         menu ? h(ContextMenu, { menu, onClose: () => setMenu(null), onPick: onMenuPick }) : null,

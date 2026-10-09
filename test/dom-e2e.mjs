@@ -260,6 +260,49 @@ try {
   check('Ctrl+S wrote the file', (await fs.readFile(path.join(SANDBOX, 'hello.js'), 'utf8')) === 'const a = 42\nconst b = 2\n')
   check('save clears the dirty flag', container.querySelector('.hx-status')?.textContent.includes('已保存'), container.querySelector('.hx-status')?.textContent)
 
+  // Ctrl+D duplicates the current line (caret at column 8 of the first line)
+  await act(async () => {
+    area.selectionStart = 8
+    area.selectionEnd = 8
+  })
+  await act(async () => {
+    area.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'd', ctrlKey: true, bubbles: true }))
+  })
+  await flush(120)
+  check(
+    'Ctrl+D duplicated the current line',
+    area.value === 'const a = 42\nconst a = 42\nconst b = 2\n',
+    JSON.stringify(area.value),
+  )
+  check('Ctrl+D left the caret on the copy', area.selectionStart === 21, String(area.selectionStart))
+  check('Ctrl+D marks the buffer dirty', container.querySelector('.hx-status')?.textContent.includes('未保存'), container.querySelector('.hx-status')?.textContent)
+  await act(async () => {
+    area.dispatchEvent(new window.KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true }))
+  })
+  await flush(120)
+  check('Ctrl+S saved the duplicated line', (await fs.readFile(path.join(SANDBOX, 'hello.js'), 'utf8')) === 'const a = 42\nconst a = 42\nconst b = 2\n')
+  // 选区跨多行时，复制的是整段
+  await type(area, 'const a = 42\nconst b = 2\n')
+  await act(async () => {
+    area.selectionStart = 8
+    area.selectionEnd = 19
+  })
+  await act(async () => {
+    area.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'd', ctrlKey: true, bubbles: true }))
+  })
+  await flush(120)
+  check(
+    'Ctrl+D duplicates a multi-line selection as one block',
+    area.value === 'const a = 42\nconst b = 2\nconst a = 42\nconst b = 2\n',
+    JSON.stringify(area.value),
+  )
+  // 复原成两行，后面的用例继续用这个文件
+  await type(area, 'const a = 42\nconst b = 2\n')
+  await act(async () => {
+    area.dispatchEvent(new window.KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true }))
+  })
+  await flush(120)
+
   // expand a folder, open a file from the tree
   await click(rowNamed('docs'))
   check('folder expands', !!rowNamed('note.txt'), rows().map(row => row.querySelector('.hx-name')?.textContent).join(','))
