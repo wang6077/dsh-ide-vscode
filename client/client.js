@@ -216,6 +216,11 @@ window.__ModuleLoader__.load({
     // means "asked, nothing came back" — no repeat request, primitive icon stays.
     const FILE_ICONS = new Map()
 
+    // The host's platform, learned from the first `/icons` answer (`null` until then).
+    // Windows is the only platform with a shell-icon extractor: anywhere else we stop
+    // asking after that first empty answer and keep the icons we draw ourselves.
+    let SHELL_ICON_PLATFORM = null
+
     /** `"notes.TXT"` → `".txt"`; anything without a plain extension → `''`. */
     function fileIconKey(name) {
       const base = String(name ?? '').split('/').pop().toLowerCase()
@@ -912,6 +917,9 @@ window.__ModuleLoader__.load({
       // to make the rows re-render when an answer lands.
       const [iconTick, setIconTick] = useState(0)
       useEffect(() => {
+        // Windows only: once the host has said it runs somewhere else, stop asking.
+        if (SHELL_ICON_PLATFORM !== null && SHELL_ICON_PLATFORM !== 'win32')
+          return undefined
         const missing = new Set()
         for (const node of Object.values(listings)) {
           for (const item of node.entries ?? []) {
@@ -927,6 +935,8 @@ window.__ModuleLoader__.load({
           .then((payload) => {
             if (!alive)
               return
+            if (typeof payload?.platform === 'string')
+              SHELL_ICON_PLATFORM = payload.platform
             let changed = false
             for (const [key, url] of Object.entries(payload?.icons ?? {})) {
               if (!FILE_ICONS.has(key)) {

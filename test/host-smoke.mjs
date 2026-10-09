@@ -16,7 +16,7 @@ const SANDBOX = path.resolve(process.env.DSH_IDE_ROOT || path.join(os.tmpdir(), 
 process.env.DSH_IDE_ROOT = SANDBOX
 await fs.mkdir(path.join(SANDBOX, 'workspace', 'tmp'), { recursive: true })
 await fs.writeFile(path.join(SANDBOX, 'README.md'), '# sandbox\n', 'utf8')
-const { routes, apply, iconKeyFor, parseIconDump } = await import('../lib/index.js')
+const { routes, apply, iconKeyFor, parseIconDump, systemIcons } = await import('../lib/index.js')
 
 const ROOT = SANDBOX
 const WORK = 'workspace/tmp/ide-smoke'
@@ -154,6 +154,17 @@ try {
   check('parseIconDump reads every usable row', Object.keys(dumped).join(',') === '.txt,.zip', Object.keys(dumped).join(','))
   check('parseIconDump makes a data url', String(dumped['.txt']).startsWith('data:image/png;base64,'), String(dumped['.txt']).slice(0, 30))
   check('parseIconDump drops short payloads', parseIconDump('nothing here') && Object.keys(parseIconDump('nothing here')).length === 0, JSON.stringify(parseIconDump('nothing here')))
+  // The Windows-only guard: off Windows the extractor must not even be reached, so we
+  // assert on the empty answer *and* that it arrives without a PowerShell round trip (a
+  // real run takes well over a second, whether or not this host is Windows itself).
+  const offWindows = await systemIcons(['.txt', '.zip'], 'darwin')
+  check('systemIcons is empty off Windows', Object.keys(offWindows).length === 0, JSON.stringify(offWindows))
+  const onLinux = await systemIcons(['.txt'], 'linux')
+  check('systemIcons is empty on Linux', Object.keys(onLinux).length === 0, JSON.stringify(onLinux))
+  const guardStart = Date.now()
+  await systemIcons(['.txt', '.zip'], 'darwin')
+  const guardMs = Date.now() - guardStart
+  check('systemIcons never spawns off Windows', guardMs < 500, `${guardMs}ms`)
   let iconResponse = await call(api('/icons'))
   check('GET /icons without extensions 200', iconResponse.status === 200, String(iconResponse.status))
   check('GET /icons without extensions is empty', JSON.stringify(iconResponse.json?.icons) === '{}', JSON.stringify(iconResponse.json?.icons))
@@ -166,6 +177,20 @@ try {
   else {
     check('GET /icons is empty off Windows', JSON.stringify(iconResponse.json?.icons) === '{}', JSON.stringify(iconResponse.json?.icons))
   }
+  // The same guard on the production path: pretend this host is macOS and ask the route
+  // for an extension that has never been cached, so only the platform check can stop it
+  // (if the guard were missing, the extractor would run and hand back a generic icon).
+  const realPlatform = process.platform
+  try {
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
+    const asMac = await call(api('/icons'), { query: '?ext=%2Enomacmarker' })
+    check('GET /icons reports its platform', asMac.json?.platform === 'darwin', String(asMac.json?.platform))
+    check('GET /icons stays empty when the host is not Windows', JSON.stringify(asMac.json?.icons) === '{}', JSON.stringify(asMac.json?.icons))
+  }
+  finally {
+    Object.defineProperty(process, 'platform', { value: realPlatform, configurable: true })
+  }
+  check('the platform stub is undone', process.platform === realPlatform, process.platform)
 
   // 1. root
   let response = await call(api('/root'))
